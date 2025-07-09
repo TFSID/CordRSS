@@ -1,5 +1,5 @@
 # MonitoRSS (formerly Discord.RSS)
-
+# Initiate Update
 Delivers highly-customized news feeds to Discord!
 
 - [MonitoRSS (formerly Discord.RSS)](#monitorss-formerly-discordrss)
