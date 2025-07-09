@@ -76,9 +76,8 @@ export default function config(options?: {
       .BACKEND_API_USER_FEEDS_API_HOST as string,
     BACKEND_API_USER_FEEDS_API_KEY: process.env
       .BACKEND_API_USER_FEEDS_API_KEY as string,
-    BACKEND_API_RABBITMQ_BROKER_URL: encodeURI(
-      process.env.BACKEND_API_RABBITMQ_BROKER_URL as string
-    ),
+    BACKEND_API_RABBITMQ_BROKER_URL: process.env
+      .BACKEND_API_RABBITMQ_BROKER_URL as string,
     BACKEND_API_DEFAULT_MAX_USER_FEEDS: Number(
       (process.env.BACKEND_API_DEFAULT_MAX_USER_FEEDS as string) || 0
     ),
@@ -116,11 +115,6 @@ export default function config(options?: {
       .BACKEND_API_REDDIT_CLIENT_SECRET as string,
     BACKEND_API_REDDIT_REDIRECT_URI: process.env
       .BACKEND_API_REDDIT_REDIRECT_URI as string,
-    BACKEND_API_ADMIN_USER_IDS: process.env.BACKEND_API_ADMIN_USER_IDS
-      ? process.env.BACKEND_API_ADMIN_USER_IDS.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : [],
   };
 
   if (!options?.skipValidation) {

@@ -153,8 +153,4 @@ export class GetUserFeedArticlesInputDto {
   @Type(() => LookupDetails)
   @ValidateNested()
   requestLookupDetails?: LookupDetails;
-
-  @IsOptional()
-  @IsBoolean()
-  executeFetchIfStale?: boolean;
 }

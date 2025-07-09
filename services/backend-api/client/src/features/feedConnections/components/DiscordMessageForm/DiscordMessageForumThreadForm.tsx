@@ -19,7 +19,7 @@ import {
   Tooltip,
 } from "@chakra-ui/react";
 import { Controller, useFormContext } from "react-hook-form";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import { FiFilter } from "react-icons/fi";
 import { DiscordMessageFormData } from "@/types/discord";
 import { useDiscordChannelForumTags } from "../../hooks";
@@ -28,7 +28,6 @@ import { LogicalFilterExpression } from "../../types";
 import { useDiscordWebhook } from "../../../discordWebhooks";
 import { useUserFeedConnectionContext } from "../../../../contexts/UserFeedConnectionContext";
 import { FeedDiscordChannelConnection } from "../../../../types";
-import MessagePlaceholderText from "../../../../components/MessagePlaceholderText";
 
 const TagCheckbox = ({
   emojiName,
@@ -73,8 +72,8 @@ const TagCheckbox = ({
             }}
           >
             <HStack>
-              <Box aria-hidden>{emojiName}</Box>
-              <Text>{name || "(no tag name)"}</Text>
+              <Box>{emojiName}</Box>
+              <Text>{name || "(no name)"}</Text>
             </HStack>
           </Checkbox>
           {isChecked && (
@@ -126,7 +125,7 @@ export const DiscordMessageForumThreadForm = () => {
 
   return (
     <Stack spacing={8} divider={<StackDivider />}>
-      <FormControl isInvalid={!!errors.forumThreadTitle}>
+      <FormControl isInvalid={!!errors.content}>
         <Stack
           direction={{ base: "column", md: "row" }}
           spacing={{ base: "1.5", md: "8" }}
@@ -135,11 +134,7 @@ export const DiscordMessageForumThreadForm = () => {
           <Box>
             <FormLabel>{t("components.discordMessageForumThreadForm.threadTitleLabel")}</FormLabel>
             <FormHelperText>
-              <Trans
-                t={t}
-                i18nKey="components.discordMessageForumThreadForm.threadTitleDescription"
-                components={[<MessagePlaceholderText />]}
-              />
+              {t("components.discordMessageForumThreadForm.threadTitleDescription")}
             </FormHelperText>
           </Box>
           <Stack
@@ -161,24 +156,22 @@ export const DiscordMessageForumThreadForm = () => {
                 />
               )}
             />
-            {errors.forumThreadTitle && (
-              <FormErrorMessage>{errors.forumThreadTitle.message}</FormErrorMessage>
-            )}
+            {errors.content && <FormErrorMessage>{errors.content.message}</FormErrorMessage>}
           </Stack>
         </Stack>
       </FormControl>
-      <Box>
+      <FormControl isInvalid={!!errors.forumThreadTags}>
         <Stack
           direction={{ base: "column", md: "row" }}
           spacing={{ base: "1.5", md: "8" }}
           justify="space-between"
         >
-          <Stack>
-            <Text>{t("components.discordMessageForumThreadForm.threadTagsLabel")}</Text>
-            <Text color="whiteAlpha.600" fontSize="sm">
+          <Box>
+            <FormLabel>{t("components.discordMessageForumThreadForm.threadTagsLabel")}</FormLabel>
+            <FormHelperText>
               {t("components.discordMessageForumThreadForm.threadTagsDescription")}
-            </Text>
-          </Stack>
+            </FormHelperText>
+          </Box>
           <Stack
             spacing={8}
             width="100%"
@@ -266,7 +259,7 @@ export const DiscordMessageForumThreadForm = () => {
             {errors.content && <FormErrorMessage>{errors.content.message}</FormErrorMessage>}
           </Stack>
         </Stack>
-      </Box>
+      </FormControl>
     </Stack>
   );
 };

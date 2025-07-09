@@ -24,6 +24,7 @@ import {
   FeedLimitReachedException,
   MissingChannelException,
   MissingChannelPermissionsException,
+  NoDiscordChannelPermissionOverwritesException,
   UserMissingManageGuildException,
 } from "./exceptions";
 import { SupportersService } from "../supporters/supporters.service";
@@ -176,11 +177,9 @@ export class FeedsService {
   async canUseChannel({
     channelId,
     userAccessToken,
-    skipBotPermissionAssertions,
   }: {
     channelId: string;
     userAccessToken: string;
-    skipBotPermissionAssertions?: boolean;
   }) {
     const channel = await this.discordApiService.getChannel(channelId);
 
@@ -197,9 +196,11 @@ export class FeedsService {
       return channel;
     }
 
+    if (!channel.permission_overwrites) {
+      throw new NoDiscordChannelPermissionOverwritesException();
+    }
+
     if (
-      channel.permission_overwrites &&
-      !skipBotPermissionAssertions &&
       !(await this.discordPermissionsService.botHasPermissionInChannel(
         channel,
         [SEND_CHANNEL_MESSAGE, VIEW_CHANNEL]

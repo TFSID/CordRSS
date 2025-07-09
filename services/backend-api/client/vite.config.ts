@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { defineConfig, ProxyOptions } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
 const VITE_ENV = process.env.ENV || "development";
@@ -28,16 +28,7 @@ const proxyOptionsByEnv: Record<string, Record<string, ProxyOptions>> = {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    sentryVitePlugin({
-      org: process.env.SENTRY_ORG,
-      project: process.env.SENTRY_PROJECT,
-      release: {
-        name: process.env.SENTRY_RELEASE,
-      },
-    }),
-  ],
+  plugins: [react(), sentryVitePlugin()],
   publicDir: "./public",
   resolve: {
     alias: {

@@ -61,7 +61,7 @@ export const ArticleFilterResults = ({ title, filters, tableContainer }: Props) 
   } = useUserFeedArticlesWithPagination({
     feedId,
     data: {
-      selectProperties: [selectedArticleProperty, "id"].filter((v) => !!v),
+      selectProperties: [selectedArticleProperty, "id"],
       filters: {
         returnType: GetArticlesFilterReturnType.IncludeEvaluationResults,
         expression: debouncedFilters || undefined,
@@ -107,14 +107,12 @@ export const ArticleFilterResults = ({ title, filters, tableContainer }: Props) 
           </Heading>
         )}
         {!alertComponent && (
-          <HStack alignItems="center" flexWrap="wrap">
-            <Text
-              as="label"
-              whiteSpace="nowrap"
-              id="article-property-select-label"
-              htmlFor="article-property-select"
-            >
-              Display article property:
+          <HStack alignItems="center">
+            <Text whiteSpace="nowrap">
+              {t(
+                "features.feedConnections.components" +
+                  ".filtersTabSection.displayPropertyDropdownLabel"
+              )}
             </Text>
             <Box width={{ md: "250px", lg: "350px" }}>
               <ThemedSelect
@@ -129,11 +127,6 @@ export const ArticleFilterResults = ({ title, filters, tableContainer }: Props) 
                 loading={feedArticlePropertiesStatus === "loading"}
                 value={useArticleProperty}
                 onChange={onChangeFeedArticleProperty}
-                isInvalid={false}
-                selectProps={{
-                  inputId: "article-property-select",
-                  "aria-labelledby": "article-property-select-label",
-                }}
               />
             </Box>
           </HStack>
@@ -161,7 +154,7 @@ export const ArticleFilterResults = ({ title, filters, tableContainer }: Props) 
               }
               displayPropertyName={useArticleProperty as string}
             />
-            <Flex justifyContent="space-between" flexWrap="wrap" gap={2}>
+            <Flex justifyContent="space-between">
               {t("common.table.results", {
                 start: skip + 1,
                 end: skip + limit,
@@ -171,30 +164,18 @@ export const ArticleFilterResults = ({ title, filters, tableContainer }: Props) 
                 <Button
                   size="sm"
                   width="min-content"
-                  onClick={() => {
-                    if (onFirstPage || fetchStatus === "fetching") {
-                      return;
-                    }
-
-                    prevPage();
-                  }}
-                  aria-disabled={onFirstPage || fetchStatus === "fetching"}
+                  onClick={prevPage}
+                  isDisabled={onFirstPage || fetchStatus === "fetching"}
                 >
-                  <span>Previous Page</span>
+                  <span>{t("features.feedConnections.components.filtersTabSection.prevPage")}</span>
                 </Button>
                 <Button
                   size="sm"
                   width="min-content"
-                  onClick={() => {
-                    if (onLastPage || fetchStatus === "fetching") {
-                      return;
-                    }
-
-                    nextPage();
-                  }}
-                  aria-disabled={onLastPage || fetchStatus === "fetching"}
+                  onClick={nextPage}
+                  isDisabled={onLastPage || fetchStatus === "fetching"}
                 >
-                  <span>Next Page</span>
+                  <span>{t("features.feedConnections.components.filtersTabSection.nextPage")}</span>
                 </Button>
               </HStack>
             </Flex>

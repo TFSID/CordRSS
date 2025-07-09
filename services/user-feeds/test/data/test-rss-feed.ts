@@ -12,7 +12,7 @@ export const DEFAULT_TEST_ARTICLES: Array<TestArticle> = [
   },
 ];
 
-const getTestRssFeed = (articles?: Array<TestArticle>, replace?: boolean) => {
+const getTestRssFeed = (articles?: Array<TestArticle>) => {
   const parser = new XMLParser();
   const parsed: {
     rss: { channel: { item: Array<TestArticle> } };
@@ -21,9 +21,7 @@ const getTestRssFeed = (articles?: Array<TestArticle>, replace?: boolean) => {
      <rss version="2.0"><channel><title>Feed title</title></channel>
      </rss>
     `);
-  parsed.rss.channel.item = replace
-    ? articles || DEFAULT_TEST_ARTICLES
-    : [...DEFAULT_TEST_ARTICLES, ...(articles || [])];
+  parsed.rss.channel.item = [...DEFAULT_TEST_ARTICLES, ...(articles || [])];
 
   const builder = new XMLBuilder();
 

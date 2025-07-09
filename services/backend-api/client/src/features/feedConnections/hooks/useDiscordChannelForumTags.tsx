@@ -8,7 +8,7 @@ interface Props {
 export const useDiscordChannelForumTags = ({ serverId, channelId }: Props) => {
   const { data, error, status } = useDiscordServerChannels({
     serverId,
-    types: [GetDiscordChannelType.Forum, GetDiscordChannelType.Text],
+    include: [GetDiscordChannelType.Forum, GetDiscordChannelType.Text],
   });
 
   return {

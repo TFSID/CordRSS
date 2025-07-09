@@ -62,8 +62,6 @@ export interface CreateDiscordChannelConnectionPreviewInput {
       id: string;
       filters?: Record<string, any> | null;
     }> | null;
-    channelNewThreadExcludesPreview?: boolean | null;
-    channelNewThreadTitle?: string | null;
   };
 }
 

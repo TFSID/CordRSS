@@ -42,12 +42,6 @@ export const getErrorMessageForArticleRequestStatus = (
       };
     }
 
-    if (statusCode === 404) {
-      return {
-        ref: "common.apiErrors.feedRequestNotFound",
-      };
-    }
-
     if (statusCode?.toString().startsWith("5")) {
       return {
         ref: "common.apiErrors.feedRequestInternalError",

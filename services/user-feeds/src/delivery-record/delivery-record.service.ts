@@ -7,21 +7,13 @@ import {
   ArticleDeliveryStatus,
 } from "../shared";
 import { DeliveryRecord } from "./entities";
+import dayjs from "dayjs";
 import { MikroORM } from "@mikro-orm/core";
 import { GetUserFeedDeliveryRecordsOutputDto } from "../feeds/dto";
 import { DeliveryLogStatus } from "../feeds/constants/delivery-log-status.constants";
-import PartitionedDeliveryRecordInsert from "./types/partitioned-delivery-record-insert.type";
-import logger from "../shared/utils/logger";
-import { AsyncLocalStorage } from "node:async_hooks";
 
 const { Failed, Rejected, Sent, PendingDelivery, FilteredOut } =
   ArticleDeliveryStatus;
-
-interface AsyncStore {
-  toInsert: PartitionedDeliveryRecordInsert[];
-}
-
-const asyncLocalStorage = new AsyncLocalStorage<AsyncStore>();
 
 @Injectable()
 export class DeliveryRecordService {
@@ -30,15 +22,6 @@ export class DeliveryRecordService {
     private readonly recordRepo: EntityRepository<DeliveryRecord>,
     private readonly orm: MikroORM // Required for @UseRequestContext()
   ) {}
-
-  async startContext<T>(cb: () => Promise<T>) {
-    return asyncLocalStorage.run(
-      {
-        toInsert: [],
-      },
-      cb
-    );
-  }
 
   async store(
     feedId: string,
@@ -51,12 +34,6 @@ export class DeliveryRecordService {
       let record: DeliveryRecord;
       const recordId = articleState.id;
 
-      const useArticleData = articleState.article?.flattened.title
-        ? {
-            title: articleState.article?.flattened.title,
-          }
-        : null;
-
       if (articleStatus === Sent) {
         record = new DeliveryRecord({
           id: recordId,
@@ -68,7 +45,6 @@ export class DeliveryRecordService {
           parent: articleState.parent
             ? ({ id: articleState.parent } as never)
             : null,
-          article_data: useArticleData,
         });
       } else if (articleStatus === Failed || articleStatus === Rejected) {
         record = new DeliveryRecord({
@@ -81,7 +57,6 @@ export class DeliveryRecordService {
           article_id_hash: articleState.articleIdHash,
           external_detail:
             articleStatus === Rejected ? articleState.externalDetail : null,
-          article_data: useArticleData,
         });
       } else if (articleStatus === PendingDelivery) {
         record = new DeliveryRecord({
@@ -96,7 +71,6 @@ export class DeliveryRecordService {
             : null,
           content_type: articleState.contentType,
           article_id_hash: articleState.articleIdHash,
-          article_data: useArticleData,
         });
       } else if (articleStatus === FilteredOut) {
         record = new DeliveryRecord({
@@ -106,7 +80,6 @@ export class DeliveryRecordService {
           medium_id: articleState.mediumId,
           article_id_hash: articleState.articleIdHash,
           external_detail: articleState.externalDetail,
-          article_data: useArticleData,
         });
       } else {
         record = new DeliveryRecord({
@@ -115,47 +88,14 @@ export class DeliveryRecordService {
           status: articleStatus,
           medium_id: articleState.mediumId,
           article_id_hash: articleState.articleIdHash,
-          article_data: useArticleData,
         });
       }
 
       return record;
     });
 
-    const partitionedInserts: PartitionedDeliveryRecordInsert[] = records.map(
-      (record) => {
-        const { id, feed_id, medium_id, created_at, status, content_type } =
-          record;
-
-        return {
-          id,
-          feedId: feed_id,
-          mediumId: medium_id,
-          createdAt: created_at,
-          status,
-          contentType: content_type ?? null,
-          parentId: record.parent?.id ?? null,
-          internalMessage: record.internal_message ?? null,
-          errorCode: record.error_code ?? null,
-          externalDetail: record.external_detail ?? null,
-          articleId: record.article_id ?? null,
-          articleIdHash: record.article_id_hash ?? null,
-          articleData: record.article_data ?? null,
-        };
-      }
-    );
-
-    const store = asyncLocalStorage.getStore();
-
-    if (!store) {
-      throw new Error("No context was started for DeliveryRecordService");
-    }
-
-    store.toInsert.push(...partitionedInserts);
-
     if (flush) {
       await this.orm.em.persistAndFlush(records);
-      await this.flushPendingInserts();
     } else {
       this.orm.em.persist(records);
     }
@@ -180,22 +120,7 @@ export class DeliveryRecordService {
     record.internal_message = internalMessage;
     record.external_detail = externalDetail;
 
-    await this.orm.em.persistAndFlush(record);
-
-    try {
-      await this.orm.em.getConnection().execute(
-        `
-      UPDATE delivery_record_partitioned
-      SET status = ?, error_code = ?, internal_message = ?, external_detail = ?
-      WHERE id = ?
-    `,
-        [status, errorCode, internalMessage, externalDetail, id]
-      );
-    } catch (err) {
-      logger.error("Error while updating partitioned delivery record", {
-        error: (err as Error).stack,
-      });
-    }
+    await this.recordRepo.persistAndFlush(record);
 
     return record;
   }
@@ -204,19 +129,41 @@ export class DeliveryRecordService {
     { mediumId, feedId }: { mediumId?: string; feedId?: string },
     secondsInPast: number
   ) {
-    // Use partitioned table for faster count
-    const query = await this.orm.em.getConnection().execute(
-      `
-      SELECT COUNT(*) FROM delivery_record_partitioned
-      WHERE created_at >= NOW() - INTERVAL '${secondsInPast} seconds'
-      AND status IN (?)
-      ${mediumId ? "AND medium_id = ?" : ""}
-      ${feedId ? "AND feed_id = ?" : ""}
-      `,
-      [Sent, ...(mediumId ? [mediumId] : []), ...(feedId ? [feedId] : [])]
-    );
+    // Convert initial counts to the same query below
+    const subquery = this.recordRepo
+      .createQueryBuilder()
+      .count()
+      .where({
+        ...(mediumId
+          ? {
+              medium_id: mediumId,
+            }
+          : {}),
+        ...(feedId
+          ? {
+              feed_id: feedId,
+            }
+          : {}),
+      })
+      .andWhere({
+        status: {
+          $in: [Sent, Rejected],
+        },
+      })
+      .andWhere({
+        created_at: {
+          $gte: dayjs().subtract(secondsInPast, "second").toDate(),
+        },
+      })
+      .groupBy("article_id_hash");
 
-    return Number(query[0].count);
+    const query = await this.recordRepo
+      .createQueryBuilder()
+      .count()
+      .from(subquery, "subquery")
+      .execute("get");
+
+    return Number(query.count);
   }
 
   async getDeliveryLogs({
@@ -228,44 +175,42 @@ export class DeliveryRecordService {
     skip: number;
     feedId: string;
   }): Promise<GetUserFeedDeliveryRecordsOutputDto["result"]["logs"]> {
-    const records: DeliveryRecord[] = await this.orm.em.getConnection().execute(
-      `
-      SELECT id, status, error_code, medium_id,
-        content_type, external_detail, article_id_hash, created_at, article_data
-      FROM delivery_record_partitioned
-      WHERE feed_id = ?
-      AND parent_id IS NULL
-      ORDER BY created_at DESC
-      LIMIT ?
-      OFFSET ?
-    `,
-      [feedId, limit, skip]
+    const selectFields: Array<keyof DeliveryRecord> = [
+      "id",
+      "status",
+      "error_code",
+      "medium_id",
+      "content_type",
+      "external_detail",
+      "article_id_hash",
+      "created_at",
+    ];
+    const records = await this.recordRepo.find(
+      {
+        feed_id: feedId,
+        parent: null,
+      },
+      {
+        limit,
+        orderBy: {
+          created_at: "DESC",
+        },
+        fields: selectFields,
+        offset: skip,
+      }
     );
 
-    let childRecords: DeliveryRecord[];
-
-    if (records.length) {
-      const found = await this.orm.em.getConnection().execute(
-        `
-      SELECT id, status, error_code, medium_id,
-        content_type, external_detail, article_id_hash, created_at, parent_id, article_data
-      FROM delivery_record_partitioned
-      WHERE feed_id = ?
-      AND parent_id IN (${records.map(() => "?").join(", ")})
-    `,
-        [feedId, ...records.map((record) => record.id)]
-      );
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      childRecords = found.map((record: any) => {
-        return {
-          ...record,
-          parent: {
-            id: record.parent_id,
-          },
-        };
-      });
-    }
+    const childRecords = await this.recordRepo.find(
+      {
+        feed_id: feedId,
+        parent: {
+          $in: records.map((record) => record.id),
+        },
+      },
+      {
+        fields: selectFields,
+      }
+    );
 
     return records.map((record) => {
       const children = childRecords.filter(
@@ -353,81 +298,11 @@ export class DeliveryRecordService {
       return {
         id: record.id,
         mediumId: record.medium_id,
-        createdAt: new Date(record.created_at).toISOString(),
+        createdAt: record.created_at.toISOString(),
         details,
         articleIdHash: record.article_id_hash,
         status,
-        articleData: record.article_data,
       };
     });
-  }
-
-  async flushPendingInserts() {
-    const store = asyncLocalStorage.getStore();
-
-    if (!store) {
-      throw new Error("No context was started for DeliveryRecordService");
-    }
-
-    const { toInsert: inserts } = store;
-
-    if (inserts.length === 0) {
-      return;
-    }
-
-    const em = this.orm.em.fork().getConnection();
-    const transaction = await em.begin();
-
-    try {
-      await Promise.all(
-        inserts.map((record) => {
-          return em.execute(
-            `INSERT INTO delivery_record_partitioned (
-              id,
-              feed_id,
-              medium_id,
-              created_at,
-              status,
-              content_type,
-              parent_id,
-              internal_message,
-              error_code,
-              external_detail,
-              article_id,
-              article_id_hash,
-              article_data
-            ) VALUES (
-             ?,?,?,?,?,?,?,?,?,?,?,?,?
-            )`,
-            [
-              record.id,
-              record.feedId,
-              record.mediumId,
-              record.createdAt,
-              record.status,
-              record.contentType,
-              record.parentId,
-              record.internalMessage,
-              record.errorCode,
-              record.externalDetail,
-              record.articleId,
-              record.articleIdHash,
-              record.articleData,
-            ],
-            transaction
-          );
-        })
-      );
-
-      await em.commit(transaction);
-    } catch (err) {
-      await em.rollback(transaction);
-
-      logger.error("Error while inserting partitioned delivery records", {
-        error: (err as Error).stack,
-      });
-    } finally {
-      store.toInsert = [];
-    }
   }
 }

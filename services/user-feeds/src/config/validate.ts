@@ -7,7 +7,6 @@ import {
   IsNumberString,
   IsOptional,
   IsString,
-  Min,
   validateSync,
 } from "class-validator";
 
@@ -83,14 +82,6 @@ export class EnvironmentVariables {
   @IsNumber()
   @IsOptional()
   USER_FEEDS_PREFETCH_COUNT?: number;
-
-  @IsNumber()
-  @Min(1)
-  USER_FEEDS_DELIVERY_RECORD_PERSISTENCE_MONTHS: number;
-
-  @IsNumber()
-  @Min(1)
-  USER_FEEDS_ARTICLE_PERSISTENCE_MONTHS: number;
 }
 
 export function validateConfig(

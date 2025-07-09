@@ -7,36 +7,13 @@ import {
   UpdateUserFeedOutput,
 } from "../api";
 
-interface Props {
-  queryKeyStringsToIgnoreValidation?: string[];
-}
-
-export const useUpdateUserFeed = (props?: Props) => {
+export const useUpdateUserFeed = () => {
   const queryClient = useQueryClient();
 
   return useMutation<UpdateUserFeedOutput, ApiAdapterError, UpdateUserFeedInput>(
     (details) => updateUserFeed(details),
     {
-      onSuccess: async (data, inputData) => {
-        await queryClient.invalidateQueries({
-          predicate: (query) => {
-            const queryKeyStringsToIgnoreValidation = new Set(
-              props?.queryKeyStringsToIgnoreValidation
-            );
-
-            if (
-              queryKeyStringsToIgnoreValidation &&
-              query.queryKey.some(
-                (item) => typeof item === "string" && queryKeyStringsToIgnoreValidation.has(item)
-              )
-            ) {
-              return false;
-            }
-
-            return query.queryKey[0] === "user-feeds" || query.queryKey.includes(inputData.feedId);
-          },
-        });
-
+      onSuccess: (data, inputData) => {
         queryClient.setQueryData<GetUserFeedOutput>(
           [
             "user-feed",
@@ -46,6 +23,12 @@ export const useUpdateUserFeed = (props?: Props) => {
           ],
           data
         );
+
+        return queryClient.invalidateQueries({
+          predicate: (query) => {
+            return query.queryKey[0] === "user-feeds";
+          },
+        });
       },
     }
   );

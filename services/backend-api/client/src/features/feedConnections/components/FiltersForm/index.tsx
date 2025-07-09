@@ -12,9 +12,6 @@ import {
 } from "../../types";
 import { LogicalExpressionForm } from "./LogicalExpressionForm";
 import { ArticleFilterResults } from "../ArticleFilterResults";
-import NavigableTree, { NavigableTreeItem } from "../../../../components/NavigableTree";
-import { getAriaLabelForExpressionGroup } from "./utils/getAriaLabelForExpressionGroup";
-import { SavedUnsavedChangesPopupBar } from "../../../../components";
 
 interface FormData {
   expression: LogicalFilterExpression | null;
@@ -49,14 +46,19 @@ export const FiltersForm = ({
     control,
     formState: { isDirty, isSubmitting },
     setValue,
+    resetField,
     reset,
   } = formMethods;
-
   // @ts-ignore cyclical references in typescript types
   const watchedExpression = useWatch({
     control,
     name: "expression",
   });
+
+  const onClickReset = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    resetField("expression");
+  };
 
   const onDeletedExpression = async () => {
     setValue("expression", null, {
@@ -65,12 +67,10 @@ export const FiltersForm = ({
   };
 
   const onSaveExpression = async ({ expression: finalExpression }: FormData) => {
-    try {
-      await onSave(finalExpression);
-      reset({
-        expression: finalExpression,
-      });
-    } catch (err) {}
+    await onSave(finalExpression);
+    reset({
+      expression: finalExpression,
+    });
   };
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -148,19 +148,26 @@ export const FiltersForm = ({
       <form onSubmit={onSubmit}>
         <Stack spacing={12}>
           <Stack>
-            <NavigableTree accessibleLabel="Filter expression">
-              <NavigableTreeItem
-                isRootItem
-                id="expression."
-                ariaLabel={getAriaLabelForExpressionGroup(watchedExpression.op)}
+            <LogicalExpressionForm
+              onDeleted={onDeletedExpression}
+              prefix="expression."
+              containerProps={formContainerProps}
+            />
+            <HStack justifyContent="flex-end">
+              {isDirty && (
+                <Button variant="ghost" onClick={onClickReset} type="reset">
+                  <span>{t("common.buttons.reset")}</span>
+                </Button>
+              )}
+              <Button
+                colorScheme="blue"
+                isLoading={isSubmitting}
+                isDisabled={!isDirty || isSubmitting}
+                type="submit"
               >
-                <LogicalExpressionForm
-                  onDeleted={onDeletedExpression}
-                  prefix="expression."
-                  containerProps={formContainerProps}
-                />
-              </NavigableTreeItem>
-            </NavigableTree>
+                <span>{t("common.buttons.save")}</span>
+              </Button>
+            </HStack>
           </Stack>
           <ArticleFilterResults
             filters={watchedExpression}
@@ -170,7 +177,6 @@ export const FiltersForm = ({
             }}
           />
         </Stack>
-        <SavedUnsavedChangesPopupBar useDirtyFormCheck />
       </form>
     </FormProvider>
   );

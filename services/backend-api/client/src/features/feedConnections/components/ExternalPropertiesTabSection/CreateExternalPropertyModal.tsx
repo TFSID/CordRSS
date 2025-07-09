@@ -2,7 +2,9 @@ import {
   Box,
   Button,
   Code,
+  Flex,
   HStack,
+  Link,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -12,7 +14,7 @@ import {
   ModalOverlay,
   Radio,
   RadioGroup,
-  Spinner,
+  Skeleton,
   Stack,
   Table,
   TableContainer,
@@ -22,12 +24,13 @@ import {
   Text,
   Th,
   Thead,
+  Tooltip,
   Tr,
   chakra,
   useDisclosure,
 } from "@chakra-ui/react";
 import { cloneElement, useEffect, useState } from "react";
-import { RepeatIcon, StarIcon } from "@chakra-ui/icons";
+import { ExternalLinkIcon, RepeatIcon } from "@chakra-ui/icons";
 import { SelectArticlePropertyType, useUserFeedArticles } from "../../../feed";
 import { useUserFeedContext } from "../../../../contexts/UserFeedContext";
 import { InlineErrorAlert } from "../../../../components";
@@ -37,7 +40,7 @@ interface Props {
   onSubmitted: (data: { sourceField: string }) => void;
 }
 
-const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
+const CreateArticleInjectionModal = ({ trigger, onSubmitted }: Props) => {
   const { userFeed, articleFormatOptions } = useUserFeedContext();
   const { isOpen, onClose, onOpen } = useDisclosure();
   const [selected, setSelected] = useState("");
@@ -46,7 +49,6 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
     error,
     refetch,
     fetchStatus,
-    status,
   } = useUserFeedArticles({
     feedId: userFeed.id,
     data: {
@@ -57,7 +59,6 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
       random: true,
       formatOptions: articleFormatOptions,
     },
-    disabled: !isOpen,
   });
 
   // @ts-ignore
@@ -67,10 +68,6 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
   const articleObjectEntries = Object.entries(article ?? {});
 
   const onClickRandomize = async () => {
-    if (fetchStatus === "fetching") {
-      return;
-    }
-
     await refetch();
   };
 
@@ -82,7 +79,7 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
 
   useEffect(() => {
     if (isOpen && linkExists && !selected) {
-      // setSelected("link");
+      setSelected("link");
     }
   }, [linkExists, selected, isOpen]);
 
@@ -95,95 +92,100 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
           <ModalHeader>Create a new external property</ModalHeader>
           <ModalCloseButton />
           <ModalBody tabIndex={-1}>
-            <Box srOnly aria-live="polite" aria-busy={status === "loading"}>
-              {status === "success" && (
-                <span>Finished loading ${articleObjectEntries.length} article properties</span>
-              )}
-            </Box>
             <Stack spacing={4} paddingBottom={4}>
+              <Text>
+                Select the source property containing the URL that references the page with the
+                desired content.
+              </Text>
               {error && (
                 <InlineErrorAlert
                   title="Failed to get article properties"
                   description={error.message}
                 />
               )}
-              {status === "loading" && (
-                <Stack alignItems="center" width="100%" aria-busy>
-                  <Spinner />
-                  <Text>Loading article properties...</Text>
-                </Stack>
-              )}
-              {status === "success" && !error && (
-                <Stack spacing={4}>
-                  <Text>
-                    Select the source property containing the URL that references the page with the
-                    desired content. If you don&apos;t see a property that fits, you can randomize
-                    the article to get a new sample by clicking the randomize button. The
-                    recommended source property is the link property.
-                  </Text>
-                  <Box>
-                    <Button
-                      isLoading={fetchStatus === "fetching"}
-                      aria-disabled={fetchStatus === "fetching"}
-                      onClick={onClickRandomize}
-                      leftIcon={<RepeatIcon />}
-                    >
-                      <span>Randomize sample article</span>
-                    </Button>
-                  </Box>
-                  <Box bg="gray.800" p={2} rounded="lg" overflow="auto">
-                    <chakra.fieldset>
-                      <chakra.legend srOnly>Source Property</chakra.legend>
-                      <RadioGroup onChange={setSelected} value={selected}>
-                        <TableContainer role="presentation">
-                          <Table size="sm">
-                            <Thead>
-                              <Tr>
-                                <Th>Article Property</Th>
-                                <Th>Sample Article Value</Th>
-                              </Tr>
-                            </Thead>
-                            <Tbody>
-                              {articleObjectEntries.map(([field, value]) => {
-                                if (field === "id" || field === "idHash" || !value) {
-                                  return null;
-                                }
+              {!error && (
+                <Box bg="gray.800" p={2} rounded="lg">
+                  <RadioGroup onChange={setSelected} value={selected}>
+                    <TableContainer overflow="auto">
+                      <Table size="sm">
+                        <Thead>
+                          <Tr>
+                            <Th />
+                            <Th>Article Property</Th>
+                            <Th>
+                              Sample Article Value
+                              <Tooltip label="See another random article's values">
+                                <Button
+                                  size="xs"
+                                  ml={2}
+                                  isLoading={fetchStatus === "fetching"}
+                                  onClick={onClickRandomize}
+                                  variant="outline"
+                                  leftIcon={<RepeatIcon />}
+                                  aria-label="See another random article's values"
+                                >
+                                  <span>Randomize sample article</span>
+                                </Button>
+                              </Tooltip>
+                            </Th>
+                          </Tr>
+                        </Thead>
+                        <Tbody>
+                          {articleObjectEntries.map(([field, value]) => {
+                            if (field === "id" || field === "idHash" || !value) {
+                              return null;
+                            }
 
-                                return (
-                                  <Tr key={field}>
-                                    <Td>
-                                      <Radio
-                                        value={field}
-                                        id={`field-${field}`}
-                                        aria-labelledby={`field-${field}-label`}
-                                        mr={2}
-                                      />
-                                      <chakra.label
-                                        htmlFor={`field-${field}`}
-                                        id={`field-${field}-label`}
-                                      >
-                                        <Code>{field}</Code>
-                                        {field === "link" && (
-                                          <Tag ml={3} colorScheme="green" size="sm">
-                                            <StarIcon mr={1} aria-hidden />
-                                            Recommended source property
-                                          </Tag>
-                                        )}
-                                      </chakra.label>
-                                    </Td>
-                                    <Td whiteSpace="normal" wordBreak="break-all">
+                            return (
+                              <Tr key={field}>
+                                <Td width="min-content">
+                                  <Radio
+                                    value={field}
+                                    id={`field-${field}`}
+                                    name="field"
+                                    isDisabled={fetchStatus !== "idle"}
+                                  />
+                                </Td>
+                                <Td>
+                                  <Skeleton isLoaded={fetchStatus === "idle"}>
+                                    <chakra.label htmlFor={`field-${field}`}>
+                                      <Code>{field}</Code>
+                                    </chakra.label>
+                                    {field === "link" && (
+                                      <Tag ml={3} colorScheme="blue" size="sm">
+                                        Recommended
+                                      </Tag>
+                                    )}
+                                  </Skeleton>
+                                </Td>
+                                <Td whiteSpace="nowrap">
+                                  <Skeleton isLoaded={fetchStatus === "idle"}>
+                                    <Flex
+                                      as={chakra.label}
+                                      alignItems="center"
+                                      htmlFor={`field-${field}`}
+                                      gap={2}
+                                    >
                                       {value}
-                                    </Td>
-                                  </Tr>
-                                );
-                              })}
-                            </Tbody>
-                          </Table>
-                        </TableContainer>
-                      </RadioGroup>
-                    </chakra.fieldset>
-                  </Box>
-                </Stack>
+                                      <Link
+                                        color="blue.300"
+                                        href={value}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        <ExternalLinkIcon />
+                                      </Link>
+                                    </Flex>
+                                  </Skeleton>
+                                </Td>
+                              </Tr>
+                            );
+                          })}
+                        </Tbody>
+                      </Table>
+                    </TableContainer>
+                  </RadioGroup>
+                </Box>
               )}
             </Stack>
           </ModalBody>
@@ -195,12 +197,7 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
               <Button
                 colorScheme="blue"
                 isDisabled={!selected}
-                aria-disabled={!selected}
                 onClick={() => {
-                  if (!selected) {
-                    return;
-                  }
-
                   onSubmitted({ sourceField: selected });
                   onClose();
                 }}
@@ -215,4 +212,4 @@ const CreateExternalPropertyModal = ({ trigger, onSubmitted }: Props) => {
   );
 };
 
-export default CreateExternalPropertyModal;
+export default CreateArticleInjectionModal;

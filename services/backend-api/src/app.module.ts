@@ -15,6 +15,8 @@ import { FeedsModule } from "./features/feeds/feeds.module";
 import { SupportersModule } from "./features/supporters/supporters.module";
 import { ServeStaticModule } from "@nestjs/serve-static";
 import { ScheduleEmitterModule } from "./features/schedule-emitter/schedule-emitter.module";
+import { FeedConnectionsDiscordChannelsModule } from "./features/feed-connections/feed-connections-discord-channels.module";
+import { FeedConnectionsDiscordWebhooksModule } from "./features/feed-connections/feed-connections-discord-webhooks.module";
 import { ScheduleHandlerModule } from "./features/schedule-handler/schedule-handler.module";
 import { LegacyFeedConversionModule } from "./features/legacy-feed-conversion/legacy-feed-conversion.module";
 import { UserFeedManagementInvitesModule } from "./features/user-feed-management-invites/user-feed-management-invites.module";
@@ -40,16 +42,13 @@ import { RedditLoginModule } from "./features/reddit-login/reddit-login.module";
     MongoMigrationsModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, "..", "client", "dist"),
-      serveStaticOptions: {
-        fallthrough: true,
-      },
     }),
   ],
   controllers: [AppController, ErrorReportsController],
   providers: [AppService],
 })
 export class AppModule {
-  static forRoot(autoIndex?: boolean): DynamicModule {
+  static forRoot(): DynamicModule {
     const configValues = config();
 
     const mongoUri = new URL(configValues.BACKEND_API_MONGODB_URI);
@@ -58,15 +57,12 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
-        MongooseModule.forRoot(
-          configValues.BACKEND_API_MONGODB_URI,
-          autoIndex
-            ? {
-                autoIndex: true,
-                readPreference: "primary",
-              }
-            : undefined
-        ),
+        MongooseModule.forRoot(configValues.BACKEND_API_MONGODB_URI, {
+          autoIndex: true,
+          readPreference: "primary",
+        }),
+        FeedConnectionsDiscordWebhooksModule.forRoot(),
+        FeedConnectionsDiscordChannelsModule.forRoot(),
         SupporterSubscriptionsModule.forRoot(),
         ConfigModule.forRoot({
           isGlobal: true,
@@ -92,7 +88,7 @@ export class AppModule {
   }
 
   static forScheduleEmitter(): DynamicModule {
-    const original = this.forRoot(true);
+    const original = this.forRoot();
 
     return {
       ...original,

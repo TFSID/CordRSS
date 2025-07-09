@@ -18,7 +18,7 @@ import {
   Text,
 } from "@chakra-ui/react";
 import { useFieldArray, useFormContext } from "react-hook-form";
-import { AddIcon, DeleteIcon } from "@chakra-ui/icons";
+import { AddIcon } from "@chakra-ui/icons";
 import { motion } from "framer-motion";
 import { v4 } from "uuid";
 import { useRef } from "react";
@@ -62,7 +62,7 @@ const DiscordMessageComponentRow = ({
     <Stack border="solid 1px" borderColor="gray.700" p={4} rounded="md" bg="gray.900">
       <HStack justifyContent="space-between" flexWrap="wrap">
         <Badge bg="none" p={0}>
-          Button Row {rowIndex + 1}
+          Row {rowIndex + 1}
         </Badge>
         <Button
           size="sm"
@@ -71,9 +71,8 @@ const DiscordMessageComponentRow = ({
           onClick={() => {
             onClickDeleteRow();
           }}
-          leftIcon={<DeleteIcon />}
         >
-          Delete Row
+          Delete
         </Button>
       </HStack>
       <Divider />
@@ -131,12 +130,11 @@ const DiscordMessageComponentRow = ({
                         variant="ghost"
                         colorScheme="red"
                         size="xs"
-                        leftIcon={<DeleteIcon />}
                         onClick={() => {
                           removeButton(componentIndex);
                         }}
                       >
-                        Delete Button
+                        Delete
                       </Button>
                     </HStack>
                     <Divider />
@@ -268,7 +266,7 @@ export const DiscordMessageComponentsForm = ({ connectionId, feedId }: Props) =>
         connection.key === FeedConnectionType.DiscordChannel &&
         (connection as FeedDiscordChannelConnection).details.webhook &&
         !(connection as FeedDiscordChannelConnection).details.webhook?.isApplicationOwned && (
-          <Alert status="warning" role="none">
+          <Alert status="warning">
             <AlertIcon />
             <Box>
               <AlertTitle>
@@ -284,6 +282,7 @@ export const DiscordMessageComponentsForm = ({ connectionId, feedId }: Props) =>
                   </Text>
                   <Box>
                     <EditDiscordChannelWebhookConnectionButton
+                      feedId={feedId as string}
                       connection={connection as FeedDiscordChannelConnection}
                     />
                   </Box>
@@ -321,7 +320,7 @@ export const DiscordMessageComponentsForm = ({ connectionId, feedId }: Props) =>
               });
             }}
           >
-            Add button row
+            Add row
           </Button>
         </Box>
       </Stack>

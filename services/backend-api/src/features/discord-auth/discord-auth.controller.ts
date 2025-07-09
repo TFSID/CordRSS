@@ -29,7 +29,7 @@ export class DiscordAuthController {
   login(@Res() res: FastifyReply) {
     const authorizationUri = this.discordAuthService.getAuthorizationUrl();
 
-    res.redirect(authorizationUri, 301);
+    res.redirect(301, authorizationUri);
   }
 
   @Get("login-v2")
@@ -68,7 +68,7 @@ export class DiscordAuthController {
       additionalScopes: scopes,
     });
 
-    res.redirect(authorizationUri, 303);
+    res.redirect(303, authorizationUri);
   }
 
   @Get("callback")
@@ -79,7 +79,7 @@ export class DiscordAuthController {
     @Query("error") error?: string
   ) {
     if (error === "access_denied") {
-      return res.redirect("/", 301);
+      return res.redirect(301, "/");
     }
 
     if (!code) {
@@ -96,7 +96,7 @@ export class DiscordAuthController {
 
     await this.usersService.initDiscordUser(token.discord.id);
 
-    return res.redirect(loginRedirectUri, 301);
+    return res.redirect(301, loginRedirectUri);
   }
 
   @Get("callback-v2")
@@ -110,7 +110,7 @@ export class DiscordAuthController {
     @Query("state") state?: string
   ) {
     if (error === "access_denied") {
-      return res.redirect("/", 303);
+      return res.redirect(303, "/");
     }
 
     if (!code) {
@@ -145,7 +145,7 @@ export class DiscordAuthController {
       email: user.email,
     });
 
-    return res.redirect(`${loginRedirectUri}${path || ""}`, 303);
+    return res.redirect(303, `${loginRedirectUri}${path || ""}`);
   }
 
   @Get("logout")

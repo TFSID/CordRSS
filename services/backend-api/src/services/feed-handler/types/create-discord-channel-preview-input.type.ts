@@ -30,7 +30,6 @@ export interface CreateDiscordChannelPreviewInput {
       channel?: {
         id: string;
       };
-      channelNewThreadTitle?: DiscordChannelConnection["details"]["channelNewThreadTitle"];
       webhook?: {
         id: string;
         token: string;

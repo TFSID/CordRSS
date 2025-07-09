@@ -5,6 +5,8 @@ import {
   AccordionIcon,
   AccordionItem,
   AccordionPanel,
+  Alert,
+  AlertIcon,
   Box,
   Button,
   Card,
@@ -38,7 +40,10 @@ import { useState } from "react";
 import { FaExpandAlt } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { DiscordMessageFormData } from "../../../../types/discord";
+import { notifyError } from "../../../../utils/notifyError";
 import { useUserFeedArticles } from "../../../feed/hooks";
+import { UserFeedArticleRequestStatus } from "../../../feed/types";
+import { getErrorMessageForArticleRequestStatus } from "../../../feed/utils";
 import { ArticlePlaceholderTable } from "../ArticlePlaceholderTable";
 import { DiscordMessageForm } from "../DiscordMessageForm";
 import { ArticleSelectDialog } from "../../../feed/components";
@@ -47,8 +52,6 @@ import { pages } from "../../../../constants";
 import { UserFeedConnectionTabSearchParam } from "../../../../constants/userFeedConnectionTabSearchParam";
 import { UserFeedTabSearchParam } from "../../../../constants/userFeedTabSearchParam";
 import { useUserFeedConnectionContext } from "../../../../contexts/UserFeedConnectionContext";
-import { useGetUserFeedArticlesError } from "../../hooks";
-import { usePageAlertContext } from "../../../../contexts/PageAlertContext";
 
 interface Props {
   onMessageUpdated: (data: DiscordMessageFormData) => Promise<void>;
@@ -66,7 +69,6 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
     refetch: refetchUserFeedArticle,
     fetchStatus: userFeedArticlesFetchStatus,
     status: userFeedArticlesStatus,
-    error,
   } = useUserFeedArticles({
     feedId: userFeed.id,
     data: {
@@ -80,15 +82,9 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
       random: !selectedArticleId,
     },
   });
-  const { createErrorAlert } = usePageAlertContext();
-
-  const { alertComponent } = useGetUserFeedArticlesError({
-    getUserFeedArticlesStatus: userFeedArticlesStatus,
-    getUserFeedArticlesError: error,
-    getUserFeedArticlesOutput: userFeedArticles,
-  });
 
   const firstArticle = userFeedArticles?.result.articles[0];
+  const requestStatus = userFeedArticles?.result.requestStatus;
 
   const { t } = useTranslation();
 
@@ -97,16 +93,44 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
       setSelectedArticleId(undefined);
       await refetchUserFeedArticle();
     } catch (err) {
-      createErrorAlert({
-        title: "Failed to fetch random article.",
-        description: (err as Error).message,
-      });
+      notifyError(t("common.errors.somethingWentWrong"), err as Error);
     }
   };
 
   const onSelectedArticle = async (articleId: string) => {
     setSelectedArticleId(articleId);
   };
+
+  const fetchErrorAlert = userFeedArticlesStatus === "error" && (
+    <Alert status="error">
+      <AlertIcon />
+      {t("common.errors.somethingWentWrong")}
+    </Alert>
+  );
+
+  const alertStatus =
+    requestStatus && requestStatus !== UserFeedArticleRequestStatus.Success
+      ? getErrorMessageForArticleRequestStatus(
+          requestStatus,
+          userFeedArticles?.result?.response?.statusCode
+        )
+      : null;
+
+  const parseErrorAlert = alertStatus && (
+    <Alert status={alertStatus.status || "error"}>
+      <AlertIcon />
+      {t(alertStatus.ref)}
+    </Alert>
+  );
+
+  const noArticlesAlert = userFeedArticles?.result.articles.length === 0 && (
+    <Alert status="info">
+      <AlertIcon />
+      {t("features.feedConnections.components.articlePlaceholderTable.noArticles")}
+    </Alert>
+  );
+
+  const hasAlert = !!(fetchErrorAlert || parseErrorAlert || noArticlesAlert);
 
   const firstArticleTitle = (firstArticle as Record<string, string>)?.title;
   const firstArticleDate = (firstArticle as Record<string, string>)?.date;
@@ -152,13 +176,14 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
             </Text>
           </Stack>
         )}
-        {!alertComponent && firstArticle && (
+        {!hasAlert && firstArticle && (
           <ArticlePlaceholderTable
             asPlaceholders
             article={userFeedArticles.result.articles[0]}
             searchText={placeholderTableSearch}
             hideEmptyPlaceholders={hideEmptyPlaceholders}
             isFetching={userFeedArticlesFetchStatus === "fetching"}
+            withoutCopy
           />
         )}
       </Stack>
@@ -166,7 +191,7 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
   );
 
   return (
-    <Stack spacing={12}>
+    <Stack spacing={24}>
       <Modal isOpen={isOpen} onClose={onClose} size="full" scrollBehavior="inside">
         <ModalOverlay />
         <ModalContent>
@@ -184,33 +209,29 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
           </ModalFooter>
         </ModalContent>
       </Modal>
-      <Stack>
-        <Heading size="md" as="h2">
-          Message Format
-        </Heading>
-        <Text>Customize how your feed&apos;s articles are displayed in your Discord messages.</Text>
-      </Stack>
-      <Stack spacing={4} as="aside" aria-labelledby="placeholders-title">
+      <Stack spacing={4}>
         <Stack>
-          <Heading as="h3" size="sm" id="placeholders-title">
-            Article Placeholders Reference
+          <Heading as="h2" size="md">
+            {t(
+              "features.feedConnections.components." +
+                "articlePlaceholderTable.headingSamplePlaceholders"
+            )}
           </Heading>
           <Text>
-            Customize your message format with the use of placeholders by copying their names and
-            pasting them into any part of your message format for them to be replaced with the their
-            corresponding article content.
+            Placeholders can be used to inject article content into your messages. View any
+            article&apos;s placeholders below.
           </Text>
         </Stack>
-        {alertComponent}
+        {fetchErrorAlert || parseErrorAlert || noArticlesAlert}
         {userFeedArticlesStatus === "loading" && (
           <Center mt={6}>
             <Spinner />
           </Center>
         )}
-        {!alertComponent && firstArticle && (
-          <Card size="md" overflow="auto">
+        {!hasAlert && firstArticle && (
+          <Card size="md">
             <CardHeader padding={0} margin={5}>
-              <Heading size="xs" as="h4" textTransform="uppercase">
+              <Heading size="xs" textTransform="uppercase">
                 Selected Article
               </Heading>
             </CardHeader>
@@ -219,7 +240,7 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
                 <HStack justifyContent="space-between" flexWrap="wrap">
                   <Box>
                     {firstArticleDate && <Text color="gray.400">{firstArticleDate}</Text>}
-                    <Text size="md" fontWeight="semibold">
+                    <Heading size="md">
                       {firstArticleTitle || (
                         <span
                           style={{
@@ -229,7 +250,7 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
                           (no title available)
                         </span>
                       )}
-                    </Text>
+                    </Heading>
                   </Box>
                   <HStack alignItems="center" flexWrap="wrap">
                     <ArticleSelectDialog
@@ -240,7 +261,7 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
                           isLoading={
                             !!selectedArticleId && userFeedArticlesFetchStatus === "fetching"
                           }
-                          aria-disabled={userFeedArticlesFetchStatus === "fetching"}
+                          isDisabled={userFeedArticlesFetchStatus === "fetching"}
                         >
                           <span>
                             {t(
@@ -256,14 +277,8 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
                     <Button
                       leftIcon={<RepeatIcon />}
                       isLoading={!selectedArticleId && userFeedArticlesFetchStatus === "fetching"}
-                      aria-disabled={userFeedArticlesFetchStatus === "fetching"}
-                      onClick={() => {
-                        if (userFeedArticlesFetchStatus === "fetching") {
-                          return;
-                        }
-
-                        onClickRandomFeedArticle();
-                      }}
+                      isDisabled={userFeedArticlesFetchStatus === "fetching"}
+                      onClick={onClickRandomFeedArticle}
                     >
                       <span>
                         {t(
@@ -288,7 +303,7 @@ export const MessageTabSection = ({ onMessageUpdated, guildId }: Props) => {
                         </HStack>
                         <IconButton
                           icon={<FaExpandAlt />}
-                          aria-label="Open dialog listing all placeholders" // adding just to satisfy lint
+                          aria-label="Show bigger"
                           variant="ghost"
                           size="sm"
                           color="blue.300"

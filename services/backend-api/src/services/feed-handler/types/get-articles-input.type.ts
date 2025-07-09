@@ -10,7 +10,6 @@ export interface GetArticlesInput {
   selectPropertyTypes?: string[];
   findRssFromHtml?: boolean;
   executeFetch?: boolean;
-  executeFetchIfStale?: boolean;
   filters?: {
     expression?: Record<string, unknown>;
     returnType: GetFeedArticlesFilterReturnType;

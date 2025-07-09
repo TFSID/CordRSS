@@ -1,4 +1,4 @@
-import { InferType, mixed, object, string } from "yup";
+import { InferType, object, string } from "yup";
 
 export enum UserFeedDeliveryLogStatus {
   DELIVERED = "DELIVERED",
@@ -21,7 +21,6 @@ export const UserFeedDeliveryLogSchema = object({
     message: string(),
     data: object().optional(),
   }).optional(),
-  articleData: mixed().optional().nullable(),
 });
 
 export type UserFeedDeliveryLog = InferType<typeof UserFeedDeliveryLogSchema>;

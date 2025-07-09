@@ -5,12 +5,7 @@ import { getUserFeeds, GetUserFeedsInput, GetUserFeedsOutput } from "../api";
 import ApiAdapterError from "../../../utils/ApiAdapterError";
 import { UserFeed } from "../types";
 
-export const useUserFeeds = (
-  input: GetUserFeedsInput,
-  opts?: {
-    enabled?: boolean;
-  }
-) => {
+export const useUserFeeds = (input: GetUserFeedsInput) => {
   const [search, setSearch] = useState("");
   const [hasErrored, setHasErrored] = useState(false);
   const queryClient = useQueryClient();
@@ -33,7 +28,7 @@ export const useUserFeeds = (
       return result;
     },
     {
-      enabled: !hasErrored && opts?.enabled !== false,
+      enabled: !hasErrored,
       keepPreviousData: true,
       onError: () => {
         setHasErrored(true);

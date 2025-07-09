@@ -52,11 +52,6 @@ export class GetUserFeedsInputFiltersDto {
   @IsOptional()
   @Transform(({ value }) => (value != null ? !!value : undefined))
   ownedByUser?: boolean;
-
-  @IsArray()
-  @IsOptional()
-  @IsString({ each: true })
-  userTagIds?: string[];
 }
 
 export class GetUserFeedsInputDto {

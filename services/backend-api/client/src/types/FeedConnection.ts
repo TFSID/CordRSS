@@ -11,7 +11,6 @@ export enum FeedConnectionDisabledCode {
   BadFormat = "BAD_FORMAT",
   MissingPermissions = "MISSING_PERMISSIONS",
   MissingMedium = "MISSING_MEDIUM",
-  NotPaidSubscriber = "NOT_PAID_SUBSCRIBER",
 }
 
 export enum DiscordComponentType {
@@ -41,12 +40,10 @@ const DiscordChannelConnectionDetailsSchema = object({
   channel: object({
     id: string().required(),
     guildId: string().required(),
-    type: string().optional().nullable().oneOf(["forum", "thread", "new-thread", "forum-thread"]),
-    parentChannelId: string().optional().nullable(),
+    type: string().optional().nullable().oneOf(["forum", "thread"]),
   })
     .optional()
     .nullable(),
-  channelNewThreadTitle: string().optional(),
   webhook: object({
     id: string().required(),
     name: string().optional(),

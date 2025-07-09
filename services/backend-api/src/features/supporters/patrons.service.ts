@@ -15,25 +15,11 @@ interface PatronBenefits {
 }
 
 interface PatronDetails {
-  _id: string;
   status: Patron["status"];
   pledge: number;
   pledgeOverride?: number;
   pledgeLifetime: number;
 }
-
-/**
- * Publicly hosting bot has decreased feed limit from 5 to 3 on 1 May 2025. These patrons are Patreon $1 supporters and will be
- * grandfathered in to 5 feeds.
- */
-const LEGACY_PATREON_T1_IDS = new Set([
-  "72337020",
-  "35975808",
-  "109183897",
-  "58534",
-  "77239951",
-  "67367312",
-]);
 
 @Injectable()
 export class PatronsService {
@@ -121,12 +107,10 @@ export class PatronsService {
   }
 
   getBenefitsFromPatron({
-    _id: patreonId,
     pledge,
     pledgeLifetime,
     pledgeOverride,
   }: {
-    _id: string;
     pledge: number;
     pledgeLifetime: number;
     pledgeOverride?: number;
@@ -136,7 +120,7 @@ export class PatronsService {
     return {
       existsAndIsValid: true,
       maxFeeds: this.getMaxFeedsFromPledge(usePledge),
-      maxUserFeeds: this.getMaxUserFeedsFromPledge(patreonId, usePledge),
+      maxUserFeeds: this.getMaxUserFeedsFromPledge(usePledge),
       maxGuilds: this.getMaxServersFromPledgeLifetime(pledgeLifetime),
       refreshRateSeconds: this.getRefreshRateSecondsFromPledge(usePledge),
       allowWebhooks: true,
@@ -145,7 +129,7 @@ export class PatronsService {
     };
   }
 
-  getMaxUserFeedsFromPledge(patreonId: string, pledge: number): number {
+  getMaxUserFeedsFromPledge(pledge: number): number {
     if (pledge >= 2000) {
       return 140;
     }
@@ -164,10 +148,6 @@ export class PatronsService {
 
     if (pledge >= 250) {
       return 15;
-    }
-
-    if (LEGACY_PATREON_T1_IDS.has(patreonId) && pledge >= 100) {
-      return 5;
     }
 
     return this.defaultMaxUserFeeds;

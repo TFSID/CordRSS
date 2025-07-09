@@ -22,7 +22,6 @@ import { SupportersService } from "../supporters/supporters.service";
 import logger from "../../utils/logger";
 import { UserFeedsService } from "../user-feeds/user-feeds.service";
 import { PaddleService } from "../paddle/paddle.service";
-import { Types } from "mongoose";
 const BENEFITS_BY_TIER: Partial<
   Record<
     SubscriptionProductKey | LegacySubscriptionProductKey,
@@ -189,34 +188,26 @@ export class PaddleWebhooksService {
       );
     }
 
-    const { email: billingEmail } = await this.paddleService.getCustomer(
+    const { email } = await this.paddleService.getCustomer(
       event.data.customer_id
     );
 
-    if (!event.data.custom_data.userId) {
-      throw new Error(
-        `Could not find user id in custom_data when updating subscription for customer ${event.data.customer_id}`
-      );
-    }
-
     const foundUser = await this.userModel
       .findOne({
-        _id: new Types.ObjectId(event.data.custom_data.userId),
+        email,
       })
       .select("discordUserId")
       .lean();
 
-    const discordEmail = foundUser?.discordUserId;
-
-    if (!discordEmail) {
+    if (!foundUser) {
       throw new Error(
-        `Could not find user with user ID ${event.data.custom_data.userId} when updating subscription for customer ${event.data.customer_id}`
+        `Could not find user with email ${email} when updating subscription for customer ${event.data.customer_id}`
       );
     }
 
     const toSet: Supporter["paddleCustomer"] = {
       customerId: event.data.customer_id,
-      email: billingEmail,
+      email,
       lastCurrencyCodeUsed: event.data.currency_code,
       subscription: {
         productKey,
@@ -259,7 +250,9 @@ export class PaddleWebhooksService {
       }
     );
 
-    await this.enforceFeedLimits(foundUser.discordUserId);
+    // await this.enforceFeedLimit({
+    //   discordUserId: foundUser.discordUserId,
+    // });
 
     try {
       await this.supportersService.syncDiscordSupporterRoles(
@@ -295,7 +288,9 @@ export class PaddleWebhooksService {
     );
 
     if (supporter?._id) {
-      await this.enforceFeedLimits(supporter._id);
+      // await this.enforceFeedLimit({
+      //   discordUserId: supporter._id,
+      // });
 
       try {
         await this.supportersService.syncDiscordSupporterRoles(supporter._id);
@@ -327,12 +322,21 @@ export class PaddleWebhooksService {
     return mapped;
   }
 
-  private async enforceFeedLimits(discordUserId: string) {
+  private async enforceFeedLimit({ discordUserId }: { discordUserId: string }) {
     try {
-      await this.userFeedsService.enforceUserFeedLimit(discordUserId);
+      const { maxUserFeeds, refreshRateSeconds } =
+        await this.supportersService.getBenefitsOfDiscordUser(discordUserId);
+
+      await this.userFeedsService.enforceUserFeedLimits([
+        {
+          discordUserId,
+          maxUserFeeds,
+          refreshRateSeconds,
+        },
+      ]);
     } catch (err) {
       logger.error(
-        `Error while enforcing feed limit after paddle webhook event`,
+        `Error while enforcing feed limit for discord user ${discordUserId}`,
         {
           stack: (err as Error).stack,
         }

@@ -33,9 +33,6 @@ import {
   FeedConnectionsDiscordChannelsService,
   UpdateDiscordChannelConnectionInput,
 } from "./feed-connections-discord-channels.service";
-import { CustomPlaceholderStepType } from "../../common/constants/custom-placeholder-step-type.constants";
-import { UserFeedConnectionEventsService } from "../user-feed-connection-events/user-feed-connection-events.service";
-import { UsersService } from "../users/users.service";
 
 describe("FeedConnectionsDiscordChannelsService", () => {
   let service: FeedConnectionsDiscordChannelsService;
@@ -59,12 +56,6 @@ describe("FeedConnectionsDiscordChannelsService", () => {
   };
   const discordAuthService = {
     userManagesGuild: jest.fn(),
-  };
-  const userFeedConnectionEventsService = {
-    handleCreatedEvents: jest.fn(),
-  };
-  const usersService = {
-    getOrCreateUserByDiscordId: jest.fn(),
   };
 
   beforeAll(async () => {
@@ -94,14 +85,6 @@ describe("FeedConnectionsDiscordChannelsService", () => {
         {
           provide: DiscordAuthService,
           useValue: discordAuthService,
-        },
-        {
-          provide: UserFeedConnectionEventsService,
-          useValue: userFeedConnectionEventsService,
-        },
-        {
-          provide: UsersService,
-          useValue: usersService,
         },
       ],
       imports: [
@@ -152,12 +135,12 @@ describe("FeedConnectionsDiscordChannelsService", () => {
       });
 
       const creationDetails = {
-        feed: createdFeed,
-        name: "name",
+        feedId: createdFeed._id.toHexString(),
         channelId,
+        name: "name",
         userAccessToken: "user-access-token",
         guildId: guildId,
-        userDiscordUserId: "user-id",
+        discordUserId: "user-id",
       };
       await service.createDiscordChannelConnection(creationDetails);
 
@@ -229,17 +212,14 @@ describe("FeedConnectionsDiscordChannelsService", () => {
         },
       });
 
-      const { ids } = await service.cloneConnection(
+      const { id: clonedConnectionId } = await service.cloneConnection(
+        createdFeed,
         connection,
         {
           name: connection.name + "new-name",
-          targetFeedIds: [createdFeed._id.toHexString()],
         },
-        "token",
-        "user-id"
+        "token"
       );
-
-      const clonedConnectionId = ids[0];
 
       const updatedFeed = await userFeedsModel.findById(createdFeed._id).lean();
 
@@ -338,7 +318,6 @@ describe("FeedConnectionsDiscordChannelsService", () => {
                   id: randomUUID(),
                   regexSearch: "regex-search",
                   replacementString: "replacement",
-                  type: CustomPlaceholderStepType.Regex,
                 },
               ],
             },
@@ -351,8 +330,6 @@ describe("FeedConnectionsDiscordChannelsService", () => {
             channel: {
               id: "updatedChannelId",
             },
-            channelNewThreadExcludesPreview: false,
-            channelNewThreadTitle: "",
             content: "updatedContent",
             embeds: [
               {

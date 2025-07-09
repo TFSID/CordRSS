@@ -87,14 +87,6 @@ export class SupporterSubscriptionsService {
   }
 
   async getProductCurrencies(currency: string, data: { ipAddress?: string }) {
-    const paddleKey = this.configService.get("BACKEND_API_PADDLE_KEY");
-
-    if (!paddleKey) {
-      return {
-        products: {},
-      };
-    }
-
     const { products } = await this.paddleService.getProducts();
 
     const priceIds = products
@@ -198,14 +190,14 @@ export class SupporterSubscriptionsService {
   }
 
   async previewSubscriptionChange({
-    discordUserId,
+    email,
     items,
   }: {
-    discordUserId: string;
+    email: string;
     items: Array<{ priceId: string; quantity: number }>;
   }) {
     const { subscription } =
-      await this.supportersService.getSupporterSubscription({ discordUserId });
+      await this.supportersService.getSupporterSubscription({ email });
 
     const existingSubscriptionId = subscription?.id;
 
@@ -275,14 +267,14 @@ export class SupporterSubscriptionsService {
   }
 
   async changeSubscription({
-    discordUserId,
+    email,
     items,
   }: {
-    discordUserId: string;
+    email: string;
     items: Array<{ priceId: string; quantity: number }>;
   }) {
-    const { subscription } =
-      await this.supportersService.getSupporterSubscription({ discordUserId });
+    const { subscription, discordUserId } =
+      await this.supportersService.getSupporterSubscription({ email });
 
     const existingSubscriptionId = subscription?.id;
 
@@ -310,7 +302,7 @@ export class SupporterSubscriptionsService {
     const currentUpdatedAt = subscription.updatedAt.getTime();
 
     await this.pollForSubscriptionChange({
-      discordUserId,
+      email,
       check: (sub) => {
         const latestUpdatedAt = sub.subscription?.updatedAt;
 
@@ -327,9 +319,9 @@ export class SupporterSubscriptionsService {
     }
   }
 
-  async cancelSubscription({ discordUserId }: { discordUserId: string }) {
+  async cancelSubscription({ email }: { email: string }) {
     const { subscription } =
-      await this.supportersService.getSupporterSubscription({ discordUserId });
+      await this.supportersService.getSupporterSubscription({ email });
 
     const existingSubscriptionId = subscription?.id;
 
@@ -350,7 +342,7 @@ export class SupporterSubscriptionsService {
     );
 
     await this.pollForSubscriptionChange({
-      discordUserId,
+      email,
       check: (sub) => {
         const cancellationDate = sub.subscription?.cancellationDate;
 
@@ -359,9 +351,9 @@ export class SupporterSubscriptionsService {
     });
   }
 
-  async resumeSubscription({ discordUserId }: { discordUserId: string }) {
+  async resumeSubscription({ email }: { email: string }) {
     const { subscription } =
-      await this.supportersService.getSupporterSubscription({ discordUserId });
+      await this.supportersService.getSupporterSubscription({ email });
 
     const existingSubscriptionId = subscription?.id;
 
@@ -382,7 +374,7 @@ export class SupporterSubscriptionsService {
     );
 
     await this.pollForSubscriptionChange({
-      discordUserId,
+      email,
       check: (sub) => {
         const cancellationDate = sub.subscription?.cancellationDate;
 
@@ -391,13 +383,9 @@ export class SupporterSubscriptionsService {
     });
   }
 
-  async getUpdatePaymentMethodTransaction({
-    discordUserId,
-  }: {
-    discordUserId: string;
-  }) {
+  async getUpdatePaymentMethodTransaction({ email }: { email: string }) {
     const { subscription } =
-      await this.supportersService.getSupporterSubscription({ discordUserId });
+      await this.supportersService.getSupporterSubscription({ email });
 
     const existingSubscriptionId = subscription?.id;
 
@@ -418,10 +406,10 @@ export class SupporterSubscriptionsService {
   }
 
   async pollForSubscriptionChange({
-    discordUserId,
+    email,
     check,
   }: {
-    discordUserId: string;
+    email: string;
     check: (
       sub: Awaited<ReturnType<SupportersService["getSupporterSubscription"]>>
     ) => boolean;
@@ -432,9 +420,7 @@ export class SupporterSubscriptionsService {
 
     while (true) {
       const subscription =
-        await this.supportersService.getSupporterSubscription({
-          discordUserId,
-        });
+        await this.supportersService.getSupporterSubscription({ email });
 
       if (check(subscription)) {
         break;

@@ -51,9 +51,8 @@ export function config(options?: {
       .USER_FEEDS_DISCORD_RABBITMQ_URI as string,
     USER_FEEDS_API_PORT: process.env.USER_FEEDS_API_PORT as string,
     USER_FEEDS_API_KEY: process.env.USER_FEEDS_API_KEY as string,
-    USER_FEEDS_RABBITMQ_BROKER_URL: encodeURI(
-      process.env.USER_FEEDS_RABBITMQ_BROKER_URL as string
-    ),
+    USER_FEEDS_RABBITMQ_BROKER_URL: process.env
+      .USER_FEEDS_RABBITMQ_BROKER_URL as string,
     USER_FEEDS_POSTGRES_REPLICA1_URI: process.env
       .USER_FEEDS_POSTGRES_REPLICA1_URI as string,
     USER_FEEDS_REDIS_DISABLE_CLUSTER:
@@ -63,15 +62,6 @@ export function config(options?: {
       process.env.USER_FEEDS_USE_PARTITIONED_TABLES === "true",
     USER_FEEDS_PREFETCH_COUNT: parseInt(
       (process.env.USER_FEEDS_PREFETCH_COUNT as string) || "100",
-      10
-    ),
-    USER_FEEDS_DELIVERY_RECORD_PERSISTENCE_MONTHS: parseInt(
-      (process.env.USER_FEEDS_DELIVERY_RECORD_PERSISTENCE_MONTHS as string) ||
-        "2",
-      10
-    ),
-    USER_FEEDS_ARTICLE_PERSISTENCE_MONTHS: parseInt(
-      (process.env.USER_FEEDS_ARTICLE_PERSISTENCE_MONTHS as string) || "12",
       10
     ),
   } as const;

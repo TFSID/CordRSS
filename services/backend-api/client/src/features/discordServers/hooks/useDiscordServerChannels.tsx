@@ -7,10 +7,10 @@ import { GetDiscordChannelType } from "../constants";
 
 interface Props {
   serverId?: string;
-  types?: GetDiscordChannelType[];
+  include?: GetDiscordChannelType[];
 }
 
-export const useDiscordServerChannels = ({ serverId, types }: Props) => {
+export const useDiscordServerChannels = ({ serverId, include }: Props) => {
   const { data: accessData, isFetching: isFetchingAccessData } = useDiscordServerAccessStatus({
     serverId,
   });
@@ -19,7 +19,7 @@ export const useDiscordServerChannels = ({ serverId, types }: Props) => {
     "server-channels",
     {
       serverId,
-      types,
+      include,
     },
   ];
 
@@ -35,7 +35,7 @@ export const useDiscordServerChannels = ({ serverId, types }: Props) => {
 
       return getServerChannels({
         serverId,
-        types,
+        include,
       });
     },
     {

@@ -8,15 +8,10 @@ import {
   FeedLimitReachedException,
 } from "../feeds/exceptions";
 import { FeedsService } from "../feeds/feeds.service";
-import {
-  UserFeed,
-  UserFeedDocument,
-  UserFeedModel,
-  UserFeedWithTags,
-} from "./entities";
+import { UserFeed, UserFeedDocument, UserFeedModel } from "./entities";
+import _, { chunk } from "lodash";
 import { SupportersService } from "../supporters/supporters.service";
 import {
-  DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS,
   GetFeedArticlePropertiesInput,
   GetFeedArticlePropertiesOutput,
   GetFeedArticlesInput,
@@ -35,11 +30,7 @@ import {
 } from "../../services/feed-handler/types";
 import logger from "../../utils/logger";
 import { FilterQuery, PipelineStage, Types, UpdateQuery } from "mongoose";
-import {
-  CreateUserFeedInputDto,
-  GetUserFeedsInputDto,
-  GetUserFeedsInputSortKey,
-} from "./dto";
+import { GetUserFeedsInputDto, GetUserFeedsInputSortKey } from "./dto";
 import {
   FeedConnectionDisabledCode,
   FeedConnectionType,
@@ -78,15 +69,6 @@ import getFeedRequestLookupDetails from "../../utils/get-feed-request-lookup-det
 import { ConfigService } from "@nestjs/config";
 import { User, UserModel } from "../users/entities/user.entity";
 import { randomUUID } from "crypto";
-import {
-  CopyUserFeedSettingsInputDto,
-  UserFeedCopyableSetting,
-} from "./dto/copy-user-feed-settings-input.dto";
-import { generateUserFeedOwnershipFilters } from "./utils/get-user-feed-ownership-filters.utils";
-import { generateUserFeedSearchFilters } from "./utils/get-user-feed-search-filters.utils";
-import { UserFeedTargetFeedSelectionType } from "./constants/target-feed-selection-type.type";
-import { SourceFeedNotFoundException } from "./exceptions/source-feed-not-found.exception";
-import { getUserFeedTagLookupAggregateStage } from "./constants/user-feed-tag-lookup-aggregate-stage.constants";
 
 const badConnectionCodes = Object.values(FeedConnectionDisabledCode).filter(
   (c) => c !== FeedConnectionDisabledCode.Manual
@@ -95,10 +77,6 @@ const badUserFeedCodes = Object.values(UserFeedDisabledCode).filter(
   (c) => c !== UserFeedDisabledCode.Manual
 );
 const feedConnectionTypeKeys = Object.values(FeedConnectionTypeEntityKey);
-
-export type UserFeedBulkWriteDocument = Parameters<
-  UserFeedModel["bulkWrite"]
->[0][number];
 
 interface UpdateFeedInput {
   title?: string;
@@ -136,7 +114,7 @@ export class UserFeedsService {
     private readonly usersService: UsersService
   ) {}
 
-  async formatForHttpResponse(feed: UserFeedWithTags, discordUserId: string) {
+  async formatForHttpResponse(feed: UserFeed, discordUserId: string) {
     const discordChannelConnections: CreateDiscordChannelConnectionOutputDto[] =
       feed.connections.discordChannels.map((con) => ({
         id: con.id.toHexString(),
@@ -237,7 +215,6 @@ export class UserFeedsService {
         updatedAt: feed.updatedAt.toISOString(),
         formatOptions: feed.formatOptions,
         dateCheckOptions: feed.dateCheckOptions,
-        userTags: feed.userTags,
         refreshRateSeconds:
           feed.refreshRateSeconds ||
           (
@@ -320,90 +297,25 @@ export class UserFeedsService {
     }
   }
 
-  async deduplicateFeedUrls(discordUserId: string, urls: string[]) {
-    const found = await this.userFeedModel
-      .find(
-        {
-          url: {
-            $in: urls,
-          },
-          "user.discordUserId": discordUserId,
-        },
-        {
-          url: 1,
-        }
-      )
-      .lean();
-
-    const foundUrls = new Set(found.map((f) => f.url));
-
-    return urls.filter((u) => !foundUrls.has(u));
-  }
-
-  async validateFeedUrl(
-    { discordUserId }: { discordUserId: string },
-    { url }: { url: string }
-  ) {
-    const [, user] = await Promise.all([
-      this.supportersService.getBenefitsOfDiscordUser(discordUserId),
-      this.usersService.getOrCreateUserByDiscordId(discordUserId),
-    ]);
-
-    const tempLookupDetails = getFeedRequestLookupDetails({
-      decryptionKey: this.configService.get("BACKEND_API_ENCRYPTION_KEY_HEX"),
-      feed: {
-        url,
-        feedRequestLookupKey: randomUUID(),
-      },
-      user,
-    });
-
-    const { finalUrl, feedTitle } = await this.checkUrlIsValid(
-      url,
-      tempLookupDetails
-    );
-
-    if (finalUrl !== url) {
-      return {
-        resolvedToUrl: finalUrl,
-      };
-    }
-
-    return { resolvedToUrl: null, feedTitle };
-  }
-
   async addFeed(
     {
       discordUserId,
-      userAccessToken,
     }: {
       discordUserId: string;
-      userAccessToken: string;
     },
-    { title, url, sourceFeedId }: CreateUserFeedInputDto
-  ) {
-    const [
-      { maxUserFeeds, maxDailyArticles, refreshRateSeconds },
-      user,
-      sourceFeedToCopyFrom,
-    ] = await Promise.all([
-      this.supportersService.getBenefitsOfDiscordUser(discordUserId),
-      this.usersService.getOrCreateUserByDiscordId(discordUserId),
-      sourceFeedId
-        ? this.userFeedModel
-            .findOne({
-              _id: new Types.ObjectId(sourceFeedId),
-              ...generateUserFeedOwnershipFilters(discordUserId),
-            })
-            .lean()
-        : null,
-    ]);
-
-    if (sourceFeedId && !sourceFeedToCopyFrom) {
-      throw new SourceFeedNotFoundException(
-        `Feed with ID ${sourceFeedId} not found for user ${discordUserId}`
-      );
+    {
+      title,
+      url,
+    }: {
+      title: string;
+      url: string;
     }
+  ) {
+    const [{ maxUserFeeds, maxDailyArticles, refreshRateSeconds }, user] =
+      await Promise.all([
+        this.supportersService.getBenefitsOfDiscordUser(discordUserId),
+        this.usersService.getOrCreateUserByDiscordId(discordUserId),
+      ]);
 
     const userId = user._id;
 
@@ -424,15 +336,13 @@ export class UserFeedsService {
       user,
     });
 
-    const { finalUrl, enableDateChecks, feedTitle } =
-      await this.checkUrlIsValid(url, tempLookupDetails);
-
-    const { connections, ...propertiesToCopy } = sourceFeedToCopyFrom || {};
+    const { finalUrl, enableDateChecks } = await this.checkUrlIsValid(
+      url,
+      tempLookupDetails
+    );
 
     const created = await this.userFeedModel.create({
-      ...propertiesToCopy,
-      _id: new Types.ObjectId(),
-      title: title || feedTitle || "Untitled Feed",
+      title,
       url: finalUrl,
       inputUrl: url,
       user: {
@@ -449,21 +359,6 @@ export class UserFeedsService {
         : undefined,
     });
 
-    if (connections) {
-      for (const c of connections.discordChannels) {
-        await this.feedConnectionsDiscordChannelsService.cloneConnection(
-          c,
-          {
-            targetFeedSelectionType: UserFeedTargetFeedSelectionType.Selected,
-            name: c.name,
-            targetFeedIds: [created._id.toHexString()],
-          },
-          userAccessToken,
-          discordUserId
-        );
-      }
-    }
-
     return created;
   }
 
@@ -475,25 +370,23 @@ export class UserFeedsService {
       url?: string;
     }
   ) {
-    const foundResult = await this.userFeedModel.findById(feedId).lean();
+    const found = await this.userFeedModel.findById(feedId).lean();
 
-    if (!foundResult) {
+    if (!found) {
       throw new Error(`Feed ${feedId} not found while cloning`);
     }
 
-    const { connections, ...sourceFeed } = foundResult;
-
     const user = await this.usersService.getOrCreateUserByDiscordId(
-      sourceFeed.user.discordUserId
+      found.user.discordUserId
     );
 
     const { maxUserFeeds } =
       await this.supportersService.getBenefitsOfDiscordUser(
-        sourceFeed.user.discordUserId
+        found.user.discordUserId
       );
 
     const feedCount = await this.calculateCurrentFeedCountOfDiscordUser(
-      sourceFeed.user.discordUserId
+      found.user.discordUserId
     );
 
     if (feedCount >= maxUserFeeds) {
@@ -502,15 +395,15 @@ export class UserFeedsService {
 
     const newFeedId = new Types.ObjectId();
 
-    let inputUrl = sourceFeed.inputUrl;
-    let finalUrl = sourceFeed.url;
+    let inputUrl = found.inputUrl;
+    let finalUrl = found.url;
 
-    if (data?.url && data.url !== sourceFeed.url) {
+    if (data?.url && data.url !== found.url) {
       finalUrl = (
         await this.checkUrlIsValid(
           data.url,
           getFeedRequestLookupDetails({
-            feed: sourceFeed,
+            feed: found,
             user,
             decryptionKey: this.configService.get(
               "BACKEND_API_ENCRYPTION_KEY_HEX"
@@ -521,156 +414,33 @@ export class UserFeedsService {
       inputUrl = data.url;
     }
 
-    await this.userFeedModel.create({
-      ...sourceFeed,
+    const created = await this.userFeedModel.create({
+      ...found,
       _id: newFeedId,
-      title: data?.title || sourceFeed.title,
+      title: data?.title || found.title,
       url: finalUrl,
       inputUrl,
       connections: {},
       feedRequestLookupKey: undefined,
-      createdAt: new Date(),
     });
 
     await this.usersService.syncLookupKeys({ feedIds: [newFeedId] });
 
-    for (const c of connections.discordChannels) {
+    for (const c of found.connections.discordChannels) {
       await this.feedConnectionsDiscordChannelsService.cloneConnection(
+        created,
         c,
         {
-          targetFeedSelectionType: UserFeedTargetFeedSelectionType.Selected,
           name: c.name,
-          targetFeedIds: [newFeedId.toHexString()],
         },
         userAccessToken,
-        sourceFeed.user.discordUserId
+        found.user.discordUserId
       );
     }
 
     return {
       id: newFeedId.toHexString(),
     };
-  }
-
-  async copySettings({
-    sourceFeed,
-    dto: {
-      targetFeedIds: inputTargetFeedIds,
-      settings: settingsToCopy,
-      targetFeedSearch,
-      targetFeedSelectionType,
-    },
-    discordUserId,
-  }: {
-    sourceFeed: UserFeed;
-    dto: CopyUserFeedSettingsInputDto;
-    discordUserId: string;
-  }) {
-    // this.userFeedModel.updateMany({})
-    const setQuery: UpdateQuery<UserFeedDocument>["$set"] = {};
-    const unsetQuery: UpdateQuery<UserFeedDocument>["$unset"] = {};
-
-    if (settingsToCopy.includes(UserFeedCopyableSetting.PassingComparisons)) {
-      setQuery.passingComparisons = sourceFeed.passingComparisons;
-    }
-
-    if (settingsToCopy.includes(UserFeedCopyableSetting.BlockingComparisons)) {
-      setQuery.blockingComparisons = sourceFeed.blockingComparisons;
-    }
-
-    if (settingsToCopy.includes(UserFeedCopyableSetting.ExternalProperties)) {
-      setQuery.externalProperties = sourceFeed.externalProperties?.map((p) => ({
-        ...p,
-        id: new Types.ObjectId().toHexString(),
-      }));
-    }
-
-    if (settingsToCopy.includes(UserFeedCopyableSetting.DateChecks)) {
-      setQuery.dateCheckOptions = sourceFeed.dateCheckOptions;
-    }
-
-    if (
-      settingsToCopy.includes(UserFeedCopyableSetting.DatePlaceholderSettings)
-    ) {
-      setQuery.formatOptions = {
-        ...sourceFeed.formatOptions,
-        dateFormat: sourceFeed.formatOptions?.dateFormat,
-        dateTimezone: sourceFeed.formatOptions?.dateTimezone,
-        dateLocale: sourceFeed.formatOptions?.dateLocale,
-      };
-    }
-
-    if (settingsToCopy.includes(UserFeedCopyableSetting.RefreshRate)) {
-      if (sourceFeed.userRefreshRateSeconds) {
-        setQuery.userRefreshRateSeconds = sourceFeed.userRefreshRateSeconds;
-      } else {
-        unsetQuery.userRefreshRateSeconds = "";
-      }
-    }
-
-    const selectionTypeSelectedFilters = {
-      _id: {
-        $in: inputTargetFeedIds?.map((id) => new Types.ObjectId(id)),
-      },
-      ...generateUserFeedOwnershipFilters(discordUserId),
-    };
-    const selectionTypeAllFilters = {
-      _id: {
-        $ne: sourceFeed._id,
-      },
-      $and: [
-        {
-          ...(targetFeedSearch
-            ? generateUserFeedSearchFilters(targetFeedSearch)
-            : {}),
-        },
-        {
-          ...generateUserFeedOwnershipFilters(discordUserId),
-        },
-      ],
-    };
-    const useFilters =
-      targetFeedSelectionType === UserFeedTargetFeedSelectionType.All
-        ? selectionTypeAllFilters
-        : selectionTypeSelectedFilters;
-
-    if (settingsToCopy.includes(UserFeedCopyableSetting.Connections)) {
-      const feedsWithApplicationWebhooks = await this.userFeedModel
-        .find({
-          ...useFilters,
-          "connections.discordChannels.details.webhook.isApplicationOwned":
-            true,
-        })
-        .select("connections")
-        .lean();
-
-      await Promise.all(
-        feedsWithApplicationWebhooks.map(async (f) => {
-          await Promise.all(
-            f.connections.discordChannels.map(async (c) => {
-              if (c.details.webhook?.isApplicationOwned === true) {
-                await this.feedConnectionsDiscordChannelsService.deleteConnection(
-                  f._id.toHexString(),
-                  c.id.toHexString()
-                );
-              }
-            })
-          );
-        })
-      );
-
-      setQuery.connections = {
-        discordChannels: sourceFeed.connections.discordChannels.map((c) => ({
-          ...c,
-          id: new Types.ObjectId().toHexString(),
-        })),
-      };
-    }
-
-    await this.userFeedModel.updateMany(useFilters, {
-      $set: setQuery,
-      $unset: unsetQuery,
-    });
   }
 
   async bulkDelete(feedIds: string[]) {
@@ -680,7 +450,7 @@ export class UserFeedsService {
           $in: feedIds.map((id) => new Types.ObjectId(id)),
         },
       })
-      .select("_id legacyFeedId connections user")
+      .select("_id legacyFeedId connections")
       .lean();
 
     const foundIds = new Set(found.map((doc) => doc._id.toHexString()));
@@ -715,33 +485,16 @@ export class UserFeedsService {
           $in: found.map((doc) => doc._id),
         },
       });
-
-      const allUserIds = Array.from(
-        new Set(found.map((doc) => doc.user.discordUserId))
-      );
-
-      try {
-        await Promise.all(
-          allUserIds.map((discordUserId) =>
-            this.enforceUserFeedLimit(discordUserId)
-          )
-        );
-      } catch (err) {
-        logger.error(
-          `Failed to enforce user feed limit after bulk deleting feeds`,
-          {
-            stack: (err as Error).stack,
-          }
-        );
-      }
     }
 
     for (let i = 0; i < found.length; i++) {
       const thisId = found[i]._id.toHexString();
 
-      this.amqpConnection.publish("", MessageBrokerQueue.FeedDeleted, {
-        data: { feed: { id: thisId } },
-      });
+      this.amqpConnection.publish<{ data: { feed: { id: string } } }>(
+        "",
+        MessageBrokerQueue.FeedDeleted,
+        { data: { feed: { id: thisId } } }
+      );
     }
 
     return feedIds.map((id) => ({
@@ -753,30 +506,16 @@ export class UserFeedsService {
 
   async bulkDisable(feedIds: string[]) {
     const found = await this.userFeedModel
+
       .find({
-        $and: [
-          {
-            _id: {
-              $in: feedIds.map((id) => new Types.ObjectId(id)),
-            },
-          },
-          {
-            $or: [
-              {
-                disabledCode: {
-                  $exists: false,
-                },
-              },
-              {
-                disabledCode: {
-                  $in: DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS,
-                },
-              },
-            ],
-          },
-        ],
+        _id: {
+          $in: feedIds.map((id) => new Types.ObjectId(id)),
+        },
+        disabledCode: {
+          $exists: false,
+        },
       })
-      .select("_id user")
+      .select("_id")
       .lean();
 
     const foundIds = new Set(found.map((doc) => doc._id.toHexString()));
@@ -796,21 +535,6 @@ export class UserFeedsService {
       );
     }
 
-    const discordUserIds = found.map((doc) => doc.user.discordUserId);
-
-    try {
-      await Promise.all(
-        discordUserIds.map((id) => this.enforceUserFeedLimit(id))
-      );
-    } catch (err) {
-      logger.error(
-        `Failed to enforce user feed limit after bulk disabling feeds`,
-        {
-          stack: (err as Error).stack,
-        }
-      );
-    }
-
     return feedIds.map((id) => ({
       id,
       disabled: foundIds.has(id),
@@ -826,7 +550,7 @@ export class UserFeedsService {
         },
         disabledCode: UserFeedDisabledCode.Manual,
       })
-      .select("_id user")
+      .select("_id")
       .lean();
 
     const foundIds = new Set(found.map((doc) => doc._id.toHexString()));
@@ -842,21 +566,6 @@ export class UserFeedsService {
           $unset: {
             disabledCode: "",
           },
-        }
-      );
-    }
-
-    const discordUserIds = found.map((doc) => doc.user.discordUserId);
-
-    try {
-      await Promise.all(
-        discordUserIds.map((id) => this.enforceUserFeedLimit(id))
-      );
-    } catch (err) {
-      logger.error(
-        `Failed to enforce user feed limit after bulk disabling feeds`,
-        {
-          stack: (err as Error).stack,
         }
       );
     }
@@ -890,8 +599,7 @@ export class UserFeedsService {
   }
 
   async getFeedsByUser(
-    userId: Types.ObjectId,
-    discordUserId: string,
+    userId: string,
     { limit = 10, offset = 0, search, sort, filters }: GetUserFeedsInputDto
   ): Promise<
     Array<{
@@ -914,7 +622,7 @@ export class UserFeedsService {
     const sortKey: string = sortSplit[sortSplit.length - 1];
 
     const aggregateResults = await this.userFeedModel.aggregate([
-      ...this.generateGetFeedsAggregatePipeline(discordUserId, userId, {
+      ...this.generateGetFeedsAggregatePipeline(userId, {
         search,
         filters,
       }),
@@ -941,7 +649,6 @@ export class UserFeedsService {
           computedStatus: 1,
           legacyFeedId: 1,
           ownedByUser: 1,
-          userTags: 1,
         },
       },
     ]);
@@ -950,12 +657,11 @@ export class UserFeedsService {
   }
 
   async getFeedCountByUser(
-    userId: Types.ObjectId,
-    discordUserId: string,
+    userId: string,
     { search, filters }: Omit<GetUserFeedsInputDto, "offset" | "limit" | "sort">
   ) {
     const aggregateResults = await this.userFeedModel.aggregate([
-      ...this.generateGetFeedsAggregatePipeline(discordUserId, userId, {
+      ...this.generateGetFeedsAggregatePipeline(userId, {
         search,
         filters,
       }),
@@ -969,12 +675,14 @@ export class UserFeedsService {
 
   async getFeedRequests({
     feed,
+    skip,
+    limit,
     url,
-    query,
   }: {
     feed: UserFeed;
+    skip: number;
+    limit: number;
     url: string;
-    query: Record<string, string>;
   }) {
     const lookupDetails = getFeedRequestLookupDetails({
       feed,
@@ -985,7 +693,8 @@ export class UserFeedsService {
     });
 
     return this.feedFetcherApiService.getRequests({
-      query,
+      limit,
+      skip,
       url: lookupDetails?.url || url,
       requestLookupKey: lookupDetails?.key,
     });
@@ -1026,7 +735,11 @@ export class UserFeedsService {
 
     const useUpdateObject: UpdateQuery<UserFeedDocument> = {
       $set: {},
-      $unset: {},
+      $unset: {
+        ...(updates.disabledCode === null && {
+          disabledCode: "",
+        }),
+      },
     };
 
     if (updates.title) {
@@ -1048,7 +761,7 @@ export class UserFeedsService {
       useUpdateObject.$set!.inputUrl = updates.url;
     }
 
-    if (updates.disabledCode !== undefined) {
+    if (updates.disabledCode) {
       if (!userBenefits) {
         userBenefits = await this.supportersService.getBenefitsOfDiscordUser(
           user.discordUserId
@@ -1057,13 +770,12 @@ export class UserFeedsService {
 
       if (
         updates.disabledCode === null &&
-        disabledCode &&
-        DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS.includes(disabledCode)
+        disabledCode === UserFeedDisabledCode.ExceededFeedLimit
       ) {
         const currentFeedCount = await this.userFeedModel.countDocuments({
           "user.discordUserId": user.discordUserId,
           disabledCode: {
-            $nin: DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS,
+            $ne: UserFeedDisabledCode.ExceededFeedLimit,
           },
         });
 
@@ -1074,11 +786,7 @@ export class UserFeedsService {
         }
       }
 
-      if (updates.disabledCode !== null) {
-        useUpdateObject.$set!.disabledCode = updates.disabledCode;
-      } else {
-        useUpdateObject.$unset!.disabledCode = "";
-      }
+      useUpdateObject.$set!.disabledCode = updates.disabledCode;
     }
 
     if (updates.passingComparisons) {
@@ -1143,20 +851,11 @@ export class UserFeedsService {
 
     if (updates.url) {
       // All stored articles of the old feed are now irrelevant
-      this.amqpConnection.publish("", MessageBrokerQueue.FeedDeleted, {
-        data: { feed: { id } },
-      });
-    }
-
-    if (
-      u &&
-      (updates.disabledCode === null ||
-        (updates.disabledCode &&
-          DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS.includes(
-            updates.disabledCode
-          )))
-    ) {
-      await this.enforceUserFeedLimit(u.user.discordUserId);
+      this.amqpConnection.publish<{ data: { feed: { id: string } } }>(
+        "",
+        MessageBrokerQueue.FeedDeleted,
+        { data: { feed: { id } } }
+      );
     }
 
     return u;
@@ -1182,20 +881,11 @@ export class UserFeedsService {
       _id: id,
     });
 
-    this.amqpConnection.publish("", MessageBrokerQueue.FeedDeleted, {
-      data: { feed: { id } },
-    });
-
-    try {
-      await this.enforceUserFeedLimit(found.user.discordUserId);
-    } catch (err) {
-      logger.error(
-        `Failed to enforce user feed limit after deleting feed ${id}`,
-        {
-          stack: (err as Error).stack,
-        }
-      );
-    }
+    this.amqpConnection.publish<{ data: { feed: { id: string } } }>(
+      "",
+      MessageBrokerQueue.FeedDeleted,
+      { data: { feed: { id } } }
+    );
 
     return found;
   }
@@ -1299,38 +989,23 @@ export class UserFeedsService {
         getCachedResponse: false,
       }
     );
-
-    const isRequestSuccessful =
-      res.requestStatus === FeedFetcherFetchStatus.Success;
-    let canBeEnabled = isRequestSuccessful;
-
-    if (
-      isRequestSuccessful &&
-      feed.disabledCode === UserFeedDisabledCode.InvalidFeed
-    ) {
-      const res2 = await this.getFeedArticleProperties({
-        feed,
-        url: feed.url,
-      });
-
-      canBeEnabled =
-        isRequestSuccessful &&
-        res2.requestStatus === GetArticlesResponseRequestStatus.Success;
-    }
+    feed.disabledCode === UserFeedDisabledCode.FailedRequests;
 
     await this.userFeedModel
       .findByIdAndUpdate(feed._id, {
         $set: {
           lastManualRequestAt: requestDate,
-          healthStatus: isRequestSuccessful
-            ? UserFeedHealthStatus.Ok
-            : feed.healthStatus,
+          healthStatus:
+            res.requestStatus === FeedFetcherFetchStatus.Success
+              ? UserFeedHealthStatus.Ok
+              : feed.healthStatus,
         },
-        ...(canBeEnabled && {
-          $unset: {
-            disabledCode: "",
-          },
-        }),
+        ...(res.requestStatus === FeedFetcherFetchStatus.Success &&
+          feed.disabledCode === UserFeedDisabledCode.FailedRequests && {
+            $unset: {
+              disabledCode: "",
+            },
+          }),
       })
       .lean();
 
@@ -1467,8 +1142,7 @@ export class UserFeedsService {
   }
 
   private generateGetFeedsAggregatePipeline(
-    discordUserId: string,
-    userId: Types.ObjectId,
+    userId: string,
     {
       search,
       filters,
@@ -1479,12 +1153,26 @@ export class UserFeedsService {
   ) {
     const pipeline: PipelineStage[] = [
       {
-        $match: generateUserFeedOwnershipFilters(discordUserId),
+        $match: {
+          $or: [
+            {
+              "user.discordUserId": userId,
+            },
+            {
+              "shareManageOptions.invites": {
+                $elemMatch: {
+                  discordUserId: userId,
+                  status: UserFeedManagerStatus.Accepted,
+                },
+              },
+            },
+          ],
+        },
       },
       {
         $addFields: {
           ownedByUser: {
-            $eq: ["$user.discordUserId", discordUserId],
+            $eq: ["$user.discordUserId", userId],
           },
           computedStatus: {
             $cond: {
@@ -1546,7 +1234,14 @@ export class UserFeedsService {
     }
 
     if (search) {
-      $match.$or = generateUserFeedSearchFilters(search).$or;
+      $match.$or = [
+        {
+          title: new RegExp(_.escapeRegExp(search), "i"),
+        },
+        {
+          url: new RegExp(_.escapeRegExp(search), "i"),
+        },
+      ];
     }
 
     if (filters?.disabledCodes) {
@@ -1588,149 +1283,10 @@ export class UserFeedsService {
       pipeline.push(toPush);
     }
 
-    pipeline.push(getUserFeedTagLookupAggregateStage(userId));
-
-    if (filters?.userTagIds?.length) {
-      pipeline.push({
-        $match: {
-          userTags: {
-            $elemMatch: {
-              _id: {
-                $in: filters.userTagIds.map((id) => new Types.ObjectId(id)),
-              },
-            },
-          },
-        },
-      });
-    }
-
     return pipeline;
   }
 
-  getEnforceWebhookWrites(
-    opts:
-      | {
-          enforcementType: "all-users";
-          supporterDiscordUserIds: string[];
-        }
-      | {
-          enforcementType: "single-user";
-          allowWebhooks: boolean;
-          discordUserId: string;
-        }
-  ): UserFeedBulkWriteDocument[] {
-    const bulkWriteOps: UserFeedBulkWriteDocument[] = [];
-
-    // Find all the user feeds that are not owned by a supporter with active webhooks
-    if (opts.enforcementType === "all-users" || !opts.allowWebhooks) {
-      bulkWriteOps.push({
-        updateMany: {
-          filter: {
-            "user.discordUserId":
-              opts.enforcementType === "all-users"
-                ? {
-                    $nin: opts.supporterDiscordUserIds,
-                  }
-                : opts.discordUserId,
-            "connections.discordChannels": {
-              $elemMatch: {
-                "details.webhook.id": {
-                  $exists: true,
-                },
-                disabledCode: {
-                  $nin: [
-                    FeedConnectionDisabledCode.NotPaidSubscriber,
-                    FeedConnectionDisabledCode.Manual,
-                  ],
-                },
-              },
-            },
-          },
-          update: {
-            $set: {
-              "connections.discordChannels.$[].disabledCode":
-                FeedConnectionDisabledCode.NotPaidSubscriber,
-            },
-          },
-        },
-      });
-    }
-
-    if (opts.enforcementType === "all-users" || opts.allowWebhooks) {
-      bulkWriteOps.push({
-        updateMany: {
-          filter: {
-            "user.discordUserId":
-              opts.enforcementType === "all-users"
-                ? {
-                    $in: opts.supporterDiscordUserIds,
-                  }
-                : opts.discordUserId,
-            "connections.discordChannels": {
-              $elemMatch: {
-                "details.webhook.id": {
-                  $exists: true,
-                },
-                disabledCode: {
-                  $eq: FeedConnectionDisabledCode.NotPaidSubscriber,
-                },
-              },
-            },
-          },
-          update: {
-            // unset the disabledCode for those connections
-            $unset: {
-              "connections.discordChannels.$[].disabledCode": "",
-            },
-          },
-        },
-      });
-    }
-
-    return bulkWriteOps;
-  }
-
-  async enforceUserFeedLimit(discordUserId: string) {
-    const { isSupporter, refreshRateSeconds, maxUserFeeds } =
-      await this.supportersService.getBenefitsOfDiscordUser(discordUserId);
-
-    const enforceWebhookDocs = this.getEnforceWebhookWrites({
-      enforcementType: "single-user",
-      allowWebhooks: isSupporter,
-      discordUserId,
-    });
-
-    const enforceRefreshRateDocs = this.getEnforceRefreshRateWrites({
-      enforcementType: "single-user",
-      discordUserId,
-      refreshRateSeconds,
-    });
-
-    const allWriteDocs = [...enforceWebhookDocs, ...enforceRefreshRateDocs];
-
-    if (isSupporter) {
-      const docs = await this.enforceSupporterLimits({
-        enforcementType: "single-user",
-        discordUserId,
-        maxUserFeeds,
-      });
-
-      allWriteDocs.push(...docs);
-    } else {
-      const docs = await this.enforceNonSupporterLimits({
-        enforcementType: "single-user",
-        discordUserId,
-      });
-
-      allWriteDocs.push(...docs);
-    }
-
-    if (allWriteDocs.length > 0) {
-      await this.userFeedModel.bulkWrite(allWriteDocs);
-    }
-  }
-
-  async enforceAllUserFeedLimits(
+  async enforceUserFeedLimits(
     supporterLimits: Array<{
       discordUserId: string;
       maxUserFeeds: number;
@@ -1740,416 +1296,326 @@ export class UserFeedsService {
     const supporterDiscordUserIds = supporterLimits.map(
       ({ discordUserId }) => discordUserId
     );
-    const enforceWebhookDocs = this.getEnforceWebhookWrites({
-      enforcementType: "all-users",
-      supporterDiscordUserIds,
-    });
-
-    const enforceRefreshRateDocs = this.getEnforceRefreshRateWrites({
-      enforcementType: "all-users",
-      supporterLimits,
-    });
-
-    const [enforceNonSupporterLimitDocs, enforceSupporterLimitDocs] =
-      await Promise.all([
-        this.enforceNonSupporterLimits({
-          enforcementType: "all-users",
-          supporterDiscordUserIds,
-        }),
-        this.enforceSupporterLimits({
-          enforcementType: "all-users",
-          supporterLimits,
-        }),
-      ]);
-
-    const writeDocs = [
-      ...enforceWebhookDocs,
-      ...enforceRefreshRateDocs,
-      ...enforceSupporterLimitDocs,
-      ...enforceNonSupporterLimitDocs,
-    ];
-
-    if (writeDocs.length > 0) {
-      await this.userFeedModel.bulkWrite(writeDocs);
-    }
-  }
-
-  private async enforceNonSupporterLimits(
-    opts:
-      | {
-          enforcementType: "all-users";
-          supporterDiscordUserIds: Array<string>;
-        }
-      | {
-          enforcementType: "single-user";
-          discordUserId: string;
-        }
-  ): Promise<UserFeedBulkWriteDocument[]> {
     const defaultMaxUserFeeds = this.supportersService.defaultMaxUserFeeds;
 
-    const usersWithPotentialFeedsToDisable = await this.userFeedModel
+    await this.enforceRefreshRates(supporterLimits);
+
+    // Handle non-supporter feed disabling first
+    const usersToDisable = await this.userFeedModel
       .aggregate([
         {
           $match: {
-            "user.discordUserId":
-              opts.enforcementType === "all-users"
-                ? {
-                    $nin: opts.supporterDiscordUserIds,
-                  }
-                : opts.discordUserId,
-          },
-        },
-        {
-          $sort: {
-            createdAt: 1,
-          },
-        },
-        {
-          $group: {
-            _id: "$user.discordUserId",
-            disabledFeedIds: {
-              $push: {
-                $cond: [
-                  {
-                    $in: [
-                      "$disabledCode",
-                      [UserFeedDisabledCode.ExceededFeedLimit],
-                    ],
-                  },
-                  "$_id",
-                  "$$REMOVE",
-                ],
-              },
-            },
-            enabledFeedIds: {
-              $push: {
-                $cond: [
-                  {
-                    $not: [
-                      {
-                        $in: [
-                          "$disabledCode",
-                          DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS,
-                        ],
-                      },
-                    ],
-                  },
-                  "$_id",
-                  "$$REMOVE",
-                ],
-              },
-            },
-          },
-        },
-      ])
-      .cursor();
-
-    const arrayOfFeedIdsToDisable: Types.ObjectId[] = [];
-    const arrayOfFeedIdsToEnable: Types.ObjectId[] = [];
-
-    for await (const res of usersWithPotentialFeedsToDisable) {
-      const disabledFeedIds = res.disabledFeedIds as Types.ObjectId[];
-      const enabledFeedIds = res.enabledFeedIds as Types.ObjectId[];
-
-      const enabledFeedCount = enabledFeedIds.length;
-
-      if (enabledFeedCount > defaultMaxUserFeeds) {
-        const toDisable = enabledFeedIds.slice(
-          0,
-          enabledFeedCount - defaultMaxUserFeeds
-        );
-
-        arrayOfFeedIdsToDisable.push(...toDisable);
-      } else if (
-        enabledFeedCount < defaultMaxUserFeeds &&
-        disabledFeedIds.length > 0
-      ) {
-        const numberOfFeedsToEnable = defaultMaxUserFeeds - enabledFeedCount;
-        // Enable the newest ones first
-        const toEnable = disabledFeedIds.slice(
-          disabledFeedIds.length - numberOfFeedsToEnable
-        );
-
-        arrayOfFeedIdsToEnable.push(...toEnable);
-      }
-    }
-
-    const bulkWriteDocs: UserFeedBulkWriteDocument[] = [];
-
-    if (arrayOfFeedIdsToDisable.length > 0) {
-      bulkWriteDocs.push({
-        updateMany: {
-          filter: {
-            _id: {
-              $in: arrayOfFeedIdsToDisable,
-            },
-          },
-          update: {
-            $set: {
-              disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
-            },
-          },
-        },
-      });
-    }
-
-    if (arrayOfFeedIdsToEnable.length > 0) {
-      bulkWriteDocs.push({
-        updateMany: {
-          filter: {
-            _id: {
-              $in: arrayOfFeedIdsToEnable,
-            },
-          },
-          update: {
-            $unset: {
-              disabledCode: "",
-            },
-          },
-        },
-      });
-    }
-
-    return bulkWriteDocs;
-  }
-
-  private async enforceSupporterLimits(
-    opts:
-      | {
-          enforcementType: "all-users";
-          supporterLimits: Array<{
-            discordUserId: string;
-            maxUserFeeds: number;
-          }>;
-        }
-      | {
-          enforcementType: "single-user";
-          discordUserId: string;
-          maxUserFeeds: number;
-        }
-  ): Promise<UserFeedBulkWriteDocument[]> {
-    const userIds =
-      opts.enforcementType === "all-users"
-        ? opts.supporterLimits.map((l) => l.discordUserId)
-        : [opts.discordUserId];
-
-    if (userIds.length === 0) {
-      return [];
-    }
-
-    const feedLimitsByUserId: Record<string, number> =
-      opts.enforcementType === "all-users"
-        ? Object.fromEntries(
-            opts.supporterLimits.map(({ discordUserId, maxUserFeeds }) => [
-              discordUserId,
-              maxUserFeeds,
-            ])
-          )
-        : {
-            [opts.discordUserId]: opts.maxUserFeeds,
-          };
-
-    const aggregateResult = await this.userFeedModel
-      .aggregate([
-        {
-          $match: {
-            "user.discordUserId": {
-              $in: userIds,
-            },
-          },
-        },
-        {
-          $sort: {
-            createdAt: 1,
-          },
-        },
-        {
-          $group: {
-            _id: "$user.discordUserId",
-            disabledFeedIds: {
-              $push: {
-                $cond: [
-                  {
-                    $in: [
-                      "$disabledCode",
-                      [UserFeedDisabledCode.ExceededFeedLimit],
-                    ],
-                  },
-                  "$_id",
-                  "$$REMOVE",
-                ],
-              },
-            },
-            enabledFeedIds: {
-              $push: {
-                $cond: [
-                  {
-                    $not: [
-                      {
-                        $in: [
-                          "$disabledCode",
-                          DISABLED_CODES_FOR_EXCEEDED_FEED_LIMITS,
-                        ],
-                      },
-                    ],
-                  },
-                  "$_id",
-                  "$$REMOVE",
-                ],
-              },
-            },
-          },
-        },
-      ])
-      .cursor();
-
-    const arrayOfFeedIdsToDisable: Types.ObjectId[] = [];
-    const arrayOfFeedIdsToEnable: Types.ObjectId[] = [];
-    const bulkWriteDocs: UserFeedBulkWriteDocument[] = [];
-
-    for await (const res of aggregateResult) {
-      const discordUserId = res._id as string;
-      const enabledFeedIds = res.enabledFeedIds as Types.ObjectId[];
-      const disabledFeedIds = res.disabledFeedIds as Types.ObjectId[];
-      const limit = feedLimitsByUserId[discordUserId];
-
-      if (!limit) {
-        throw new Error(
-          `No feed limit found for user ${discordUserId} while enforcing limits`
-        );
-      }
-
-      const enabledFeedCount = enabledFeedIds.length;
-
-      if (enabledFeedCount > limit) {
-        const toDisable = enabledFeedIds.slice(0, enabledFeedCount - limit);
-
-        arrayOfFeedIdsToDisable.push(...toDisable);
-      } else if (enabledFeedCount < limit && disabledFeedIds.length > 0) {
-        const numberOfFeedsToEnable = limit - enabledFeedCount;
-        // Enable the newest ones first
-        const toEnable = disabledFeedIds.slice(
-          disabledFeedIds.length - numberOfFeedsToEnable
-        );
-
-        arrayOfFeedIdsToEnable.push(...toEnable);
-      }
-    }
-
-    if (arrayOfFeedIdsToDisable.length > 0) {
-      bulkWriteDocs.push({
-        updateMany: {
-          filter: {
-            _id: {
-              $in: arrayOfFeedIdsToDisable,
-            },
-          },
-          update: {
-            $set: {
-              disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
-            },
-          },
-        },
-      });
-    }
-
-    if (arrayOfFeedIdsToEnable.length > 0) {
-      bulkWriteDocs.push({
-        updateMany: {
-          filter: {
-            _id: {
-              $in: arrayOfFeedIdsToEnable,
-            },
-          },
-          update: {
-            $unset: {
-              disabledCode: "",
-            },
-          },
-        },
-      });
-    }
-
-    return bulkWriteDocs;
-  }
-
-  private getEnforceRefreshRateWrites(
-    opts:
-      | {
-          enforcementType: "all-users";
-          supporterLimits: Array<{
-            discordUserId: string;
-            maxUserFeeds: number;
-            refreshRateSeconds: number;
-          }>;
-        }
-      | {
-          enforcementType: "single-user";
-          discordUserId: string;
-          refreshRateSeconds: number;
-        }
-  ): UserFeedBulkWriteDocument[] {
-    const bulkWriteDocs: UserFeedBulkWriteDocument[] = [];
-    // Unset the lower user refresh rate seconds for users who are not supporters
-    const supporterRefreshRate =
-      this.supportersService.defaultSupporterRefreshRateSeconds;
-
-    if (opts.enforcementType === "all-users") {
-      const supporterDiscordUserIds = opts.supporterLimits
-        .filter(
-          ({ refreshRateSeconds }) =>
-            refreshRateSeconds === supporterRefreshRate
-        )
-        .map(({ discordUserId }) => discordUserId);
-      bulkWriteDocs.push({
-        updateMany: {
-          filter: {
-            userRefreshRateSeconds: supporterRefreshRate,
             "user.discordUserId": {
               $nin: supporterDiscordUserIds,
             },
           },
-          update: {
-            $unset: {
-              userRefreshRateSeconds: "",
+        },
+        {
+          $group: {
+            _id: "$user.discordUserId",
+            disabledCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$disabledCode",
+                      UserFeedDisabledCode.ExceededFeedLimit,
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            enabledCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $ne: [
+                      "$disabledCode",
+                      UserFeedDisabledCode.ExceededFeedLimit,
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
             },
           },
         },
-      });
-    } else {
-      const { discordUserId, refreshRateSeconds } = opts;
-
-      if (refreshRateSeconds === supporterRefreshRate) {
-        // If the user is a supporter, we don't need to do anything
-        return bulkWriteDocs;
-      }
-
-      bulkWriteDocs.push({
-        updateMany: {
-          filter: {
-            userRefreshRateSeconds: refreshRateSeconds,
-            "user.discordUserId": discordUserId,
-          },
-          update: {
-            $unset: {
-              userRefreshRateSeconds: "",
+        {
+          $match: {
+            enabledCount: {
+              $gt: defaultMaxUserFeeds,
             },
           },
         },
-      });
+      ])
+      .cursor();
+
+    for await (const { _id: discordUserId, enabledCount } of usersToDisable) {
+      const docs = await this.userFeedModel
+        .find({
+          "user.discordUserId": discordUserId,
+          disabledCode: {
+            $ne: UserFeedDisabledCode.ExceededFeedLimit,
+          },
+        })
+        .sort({
+          // Disable the oldest feeds first
+          createdAt: 1,
+        })
+        .limit(enabledCount - defaultMaxUserFeeds)
+        .select("_id")
+        .lean();
+
+      await this.userFeedModel.updateMany(
+        {
+          _id: {
+            $in: docs.map((doc) => doc._id),
+          },
+        },
+        {
+          $set: {
+            disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
+          },
+        }
+      );
     }
 
-    return bulkWriteDocs;
+    // Handle feed enabling now
+    const usersToEnable = this.userFeedModel
+      .aggregate([
+        {
+          $match: {
+            "user.discordUserId": {
+              $nin: supporterDiscordUserIds,
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$user.discordUserId",
+            disabledCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$disabledCode",
+                      UserFeedDisabledCode.ExceededFeedLimit,
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            enabledCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $ne: [
+                      "$disabledCode",
+                      UserFeedDisabledCode.ExceededFeedLimit,
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+        {
+          $match: {
+            enabledCount: {
+              $lt: defaultMaxUserFeeds,
+            },
+            // We should only be enabling feeds if some of them are disabled because of the feed limit
+            disabledCount: {
+              $gt: 0,
+            },
+          },
+        },
+      ])
+      .cursor();
+
+    for await (const { _id: discordUserId, enabledCount } of usersToEnable) {
+      const countToEnable = defaultMaxUserFeeds - enabledCount;
+
+      if (countToEnable === 0) {
+        return;
+      }
+
+      const docs = await this.userFeedModel
+        .find({
+          "user.discordUserId": discordUserId,
+          disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
+        })
+        .sort({
+          // Re-enable the newest feeds first
+          createdAt: -1,
+        })
+        .limit(countToEnable)
+        .select("_id")
+        .lean();
+
+      await this.userFeedModel.updateMany(
+        {
+          _id: {
+            $in: docs.map((doc) => doc._id),
+          },
+        },
+        {
+          $unset: {
+            disabledCode: "",
+          },
+        }
+      );
+    }
+
+    await this.enforceSupporterLimits(supporterLimits);
+  }
+
+  private async enforceSupporterLimits(
+    supporterLimits: Array<{ discordUserId: string; maxUserFeeds: number }>
+  ) {
+    const chunks = chunk(supporterLimits, 5);
+
+    for (let i = 0; i < chunks.length; ++i) {
+      const chunk = chunks[i];
+
+      await Promise.all(
+        chunk.map(async ({ discordUserId, maxUserFeeds }) => {
+          const undisabledFeedCount = await this.userFeedModel.countDocuments({
+            "user.discordUserId": discordUserId,
+            disabledCode: {
+              $ne: UserFeedDisabledCode.ExceededFeedLimit,
+            },
+          });
+
+          if (undisabledFeedCount === maxUserFeeds) {
+            return;
+          }
+
+          if (undisabledFeedCount > maxUserFeeds) {
+            logger.info(
+              `Disabling ${
+                undisabledFeedCount - maxUserFeeds
+              } feeds for user ${discordUserId} (limit: ${maxUserFeeds})`
+            );
+            const docs = await this.userFeedModel
+              .find({
+                "user.discordUserId": discordUserId,
+                disabledCode: {
+                  $ne: UserFeedDisabledCode.ExceededFeedLimit,
+                },
+              })
+              .sort({
+                // Disable the oldest feeds first
+                createdAt: 1,
+              })
+              .limit(undisabledFeedCount - maxUserFeeds)
+              .select("_id")
+              .lean();
+
+            await this.userFeedModel.updateMany(
+              {
+                _id: {
+                  $in: docs.map((doc) => doc._id),
+                },
+              },
+              {
+                $set: {
+                  disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
+                },
+              }
+            );
+
+            return;
+          }
+
+          const enableCount = maxUserFeeds - undisabledFeedCount;
+
+          // Some feeds should be enabled
+          const disabledFeedCount = await this.userFeedModel.countDocuments({
+            "user.discordUserId": discordUserId,
+            disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
+          });
+
+          if (disabledFeedCount > 0) {
+            logger.info(
+              `Enabling ${enableCount} feeds for user ${discordUserId} (limit: ${maxUserFeeds})`
+            );
+
+            const docs = await this.userFeedModel
+              .find({
+                "user.discordUserId": discordUserId,
+                disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
+              })
+              .sort({
+                // Re-enable the newest feeds first
+                createdAt: -1,
+              })
+              .limit(enableCount)
+              .select("_id")
+              .lean();
+
+            await this.userFeedModel.updateMany(
+              {
+                _id: {
+                  $in: docs.map((doc) => doc._id),
+                },
+              },
+              {
+                $unset: {
+                  disabledCode: "",
+                },
+              }
+            );
+
+            return;
+          }
+        })
+      );
+    }
+  }
+
+  private async enforceRefreshRates(
+    supporterLimits: Array<{
+      discordUserId: string;
+      maxUserFeeds: number;
+      refreshRateSeconds: number;
+    }>
+  ) {
+    const supporterRefreshRate =
+      this.supportersService.defaultSupporterRefreshRateSeconds;
+
+    const supporterDiscordUserIds = supporterLimits
+      .filter(
+        ({ refreshRateSeconds }) => refreshRateSeconds === supporterRefreshRate
+      )
+      .map(({ discordUserId }) => discordUserId);
+
+    await this.userFeedModel.updateMany(
+      {
+        userRefreshRateSeconds: supporterRefreshRate,
+        "user.discordUserId": {
+          $nin: supporterDiscordUserIds,
+        },
+      },
+      {
+        $unset: {
+          userRefreshRateSeconds: "",
+        },
+      }
+    );
   }
 
   private async checkUrlIsValid(
     url: string,
     lookupDetails: FeedRequestLookupDetails | null
-  ): Promise<{
-    finalUrl: string;
-    enableDateChecks: boolean;
-    feedTitle: string | null;
-  }> {
+  ): Promise<{ finalUrl: string; enableDateChecks: boolean }> {
     const getArticlesResponse = await this.feedHandlerService.getArticles(
       {
         url,
@@ -2167,7 +1633,7 @@ export class UserFeedsService {
         limit: 1,
         skip: 0,
         findRssFromHtml: true,
-        executeFetchIfStale: true,
+        executeFetch: true,
       },
       lookupDetails
     );
@@ -2177,7 +1643,6 @@ export class UserFeedsService {
       url: finalUrl,
       attemptedToResolveFromHtml,
       articles,
-      feedTitle,
     } = getArticlesResponse;
 
     if (requestStatus === GetArticlesResponseRequestStatus.Success) {
@@ -2193,7 +1658,6 @@ export class UserFeedsService {
       return {
         finalUrl: finalUrl || url,
         enableDateChecks: !!articles[0]?.date,
-        feedTitle: feedTitle || null,
       };
     } else if (requestStatus === GetArticlesResponseRequestStatus.TimedOut) {
       throw new FeedFetchTimeoutException(`Feed fetch timed out`);

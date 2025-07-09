@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Dispatcher, request } from "undici";
 import BodyReadable from "undici/types/readable";
@@ -15,6 +15,7 @@ import {
 } from "./exceptions";
 import { FeedResponse } from "./types";
 import pRetry from "p-retry";
+import { ClientGrpc } from "@nestjs/microservices/interfaces";
 import { lastValueFrom, Observable } from "rxjs";
 import logger from "../shared/utils/logger";
 import { Metadata } from "@grpc/grpc-js";
@@ -27,7 +28,10 @@ export class FeedFetcherService implements OnModuleInit {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   feedFetcherGrpcPackage: any;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject("FEED_FETCHER_PACKAGE") private client: ClientGrpc
+  ) {
     this.SERVICE_HOST = configService.getOrThrow(
       "USER_FEEDS_FEED_REQUESTS_API_URL"
     );
@@ -35,7 +39,7 @@ export class FeedFetcherService implements OnModuleInit {
   }
 
   onModuleInit() {
-    // this.feedFetcherGrpcPackage = this.client.getService("FeedFetcherGrpc");
+    this.feedFetcherGrpcPackage = this.client.getService("FeedFetcherGrpc");
   }
 
   async fetch(
@@ -43,7 +47,6 @@ export class FeedFetcherService implements OnModuleInit {
     options?: {
       executeFetch?: boolean;
       executeFetchIfNotInCache?: boolean;
-      executeFetchIfStale?: boolean;
       retries?: number;
       hashToCompare?: string;
       lookupDetails: FeedRequestLookupDetails | undefined | null;
@@ -63,7 +66,6 @@ export class FeedFetcherService implements OnModuleInit {
               executeFetchIfNotExists:
                 options?.executeFetchIfNotInCache ?? false,
               executeFetch: options?.executeFetch ?? false,
-              executeFetchIfStale: options?.executeFetchIfStale ?? false,
               hashToCompare: options?.hashToCompare || undefined,
               lookupDetails: options?.lookupDetails,
             }),

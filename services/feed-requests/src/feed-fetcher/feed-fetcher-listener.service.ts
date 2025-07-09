@@ -11,13 +11,6 @@ import { FeedFetcherService } from './feed-fetcher.service';
 import { RequestSource } from './constants/request-source.constants';
 import PartitionedRequestsStoreService from '../partitioned-requests-store/partitioned-requests-store.service';
 import { PartitionedRequestInsert } from '../partitioned-requests-store/types/partitioned-request.type';
-import { HostRateLimiterService } from '../host-rate-limiter/host-rate-limiter.service';
-import retryUntilTrue, {
-  RetryException,
-} from '../shared/utils/retry-until-true';
-import calculateResponseFreshnessLifetime from '../shared/utils/calculate-response-freshness-lifetime';
-import calculateCurrentResponseAge from '../shared/utils/calculate-current-response-age';
-import { CacheStorageService } from '../cache-storage/cache-storage.service';
 
 interface BatchRequestMessage {
   timestamp: number;
@@ -42,8 +35,6 @@ export class FeedFetcherListenerService {
     private readonly orm: MikroORM, // For @UseRequestContext decorator
     private readonly em: EntityManager,
     private readonly partitionedRequestsStoreService: PartitionedRequestsStoreService,
-    private readonly hostRateLimiterService: HostRateLimiterService,
-    private readonly cacheStorageService: CacheStorageService,
   ) {
     this.maxFailAttempts = this.configService.get(
       'FEED_REQUESTS_MAX_FAIL_ATTEMPTS',
@@ -52,14 +43,6 @@ export class FeedFetcherListenerService {
       'FEED_REQUESTS_FEED_REQUEST_DEFAULT_USER_AGENT',
     );
   }
-
-  calculateCurrentlyProcessingCacheKeyForMessage = (
-    event: BatchRequestMessage['data'][number],
-  ) => {
-    const lookupKey = event.lookupKey || event.url;
-
-    return `listener-service-${lookupKey}`;
-  };
 
   static BASE_FAILED_ATTEMPT_WAIT_MINUTES = 5;
 
@@ -80,166 +63,72 @@ export class FeedFetcherListenerService {
 
   @UseRequestContext()
   private async onBrokerFetchRequestBatchHandler(
-    batchRequest: BatchRequestMessage,
+    message: BatchRequestMessage,
   ): Promise<void> {
-    const rateSeconds = batchRequest?.rateSeconds;
+    const urls = message?.data?.map((u) => u.url);
+    const rateSeconds = message?.rateSeconds;
 
-    if (!batchRequest.data || rateSeconds == null) {
+    if (!message.data || rateSeconds == null) {
       logger.error(
         `Received fetch batch request message has no urls and/or rateSeconds, skipping`,
         {
-          event: batchRequest,
+          event: message,
         },
       );
 
       return;
     }
 
-    const fetchCompletedToEmit: Array<{
-      lookupKey?: string;
-      url: string;
-      rateSeconds: number;
-      debug?: boolean;
-    }> = [];
-    const requestInsertsToFlush: PartitionedRequestInsert[] = [];
-
     logger.debug(`Fetch batch request message received for batch urls`, {
-      event: batchRequest,
+      event: message,
     });
 
     try {
       const results = await Promise.allSettled(
-        batchRequest.data.map(async (message) => {
-          const { url, lookupKey, saveToObjectStorage, headers } = message;
-          let request: PartitionedRequestInsert | undefined = undefined;
+        message.data.map(
+          async ({ url, lookupKey, saveToObjectStorage, headers }) => {
+            let request: PartitionedRequestInsert | undefined = undefined;
 
-          if (saveToObjectStorage) {
-            logger.info(
-              `DEBUG: Beginning to process fetch request in batch request for ${url} with rate ${rateSeconds}s`,
-            );
-          }
-
-          const currentlyProcessing = await this.cacheStorageService.set({
-            key: this.calculateCurrentlyProcessingCacheKeyForMessage(message),
-            body: '1',
-            getOldValue: true,
-            expSeconds: rateSeconds,
-          });
-
-          if (currentlyProcessing) {
-            logger.info(
-              `Request with key ${
-                lookupKey || url
-              } with rate ${rateSeconds} is already being processed, skipping`,
-            );
-
-            return;
-          }
-
-          const recentlyProcessed =
-            await this.partitionedRequestsStoreService.wasRequestedInPastSeconds(
-              lookupKey || url,
-              Math.round(rateSeconds * 0.5),
-            );
-
-          if (recentlyProcessed) {
-            // Check is necessary if a feed is checked on both 10m and 2m intervals for example
-            logger.info(
-              `Request with key ${
-                lookupKey || url
-              } with rate ${rateSeconds} was recently processed, skipping`,
-            );
-
-            fetchCompletedToEmit.push({
-              lookupKey,
-              url,
-              rateSeconds,
-              debug: saveToObjectStorage,
-            });
-
-            return;
-          }
-
-          try {
-            await retryUntilTrue(
-              async () => {
-                const { isRateLimited } =
-                  await this.hostRateLimiterService.incrementUrlCount(url);
-
-                if (isRateLimited) {
-                  logger.info(
-                    `Host of ${url} is still rate limited, retrying later`,
-                  );
-                }
-
-                return !isRateLimited;
-              },
-              5000,
-              (rateSeconds * 1000) / 1.5, // 1.5 is the backoff factor of retryUntilTrue
-            );
-
-            const result = await this.handleBrokerFetchRequest({
-              lookupKey,
-              url,
-              rateSeconds,
-              saveToObjectStorage,
-              headers,
-            });
-
-            if (result) {
-              request = result.request;
-            }
-
-            if (result.request) {
-              requestInsertsToFlush.push(result.request);
-            }
-
-            if (result.emitFetchCompleted) {
-              fetchCompletedToEmit.push({
+            try {
+              const result = await this.handleBrokerFetchRequest({
                 lookupKey,
                 url,
                 rateSeconds,
-                debug: saveToObjectStorage,
+                saveToObjectStorage,
+                headers,
               });
-            }
-          } catch (err) {
-            if (err instanceof RetryException) {
-              logger.error(
-                `Error while retrying due to host rate limits: ${err.message}`,
-                {
-                  event: message,
-                  err: (err as Error).stack,
-                },
-              );
-            } else {
-              logger.error(`Error processing fetch request message`, {
-                event: message,
-                err: (err as Error).stack,
-              });
-            }
-          } finally {
-            if (batchRequest.timestamp) {
-              const nowTs = Date.now();
-              const finishedTs = nowTs - batchRequest.timestamp;
 
-              logger.datadog(
-                `Finished handling feed requests batch event URL in ${finishedTs}s`,
-                {
-                  duration: finishedTs,
-                  url,
+              if (result) {
+                request = result.request;
+              }
+
+              if (result.successful) {
+                await this.emitFetchCompleted({
                   lookupKey,
-                  requestStatus: request?.status,
-                  statusCode: request?.response?.statusCode,
-                  errorMessage: request?.errorMessage,
-                },
-              );
-            }
+                  url,
+                  rateSeconds: rateSeconds,
+                });
+              }
+            } finally {
+              if (message.timestamp) {
+                const nowTs = Date.now();
+                const finishedTs = nowTs - message.timestamp;
 
-            await this.cacheStorageService.del(
-              this.calculateCurrentlyProcessingCacheKeyForMessage(message),
-            );
-          }
-        }),
+                logger.datadog(
+                  `Finished handling feed requests batch event URL in ${finishedTs}s`,
+                  {
+                    duration: finishedTs,
+                    url,
+                    lookupKey,
+                    requestStatus: request?.status,
+                    statusCode: request?.response?.statusCode,
+                    errorMessage: request?.errorMessage,
+                  },
+                );
+              }
+            }
+          },
+        ),
       );
 
       for (let i = 0; i < results.length; ++i) {
@@ -254,25 +143,16 @@ export class FeedFetcherListenerService {
         });
       }
 
-      await Promise.all([
-        this.partitionedRequestsStoreService.flushInserts(
-          requestInsertsToFlush,
-        ),
-        this.em.flush(),
-      ]);
+      await this.em.flush();
 
-      fetchCompletedToEmit.forEach((event) => {
-        this.emitFetchCompleted(event);
+      await this.partitionedRequestsStoreService.flushPendingInserts();
+
+      logger.debug(`Fetch batch request message processed for urls`, {
+        urls,
       });
-
-      if (batchRequest.data.some((d) => d.saveToObjectStorage)) {
-        logger.info(
-          `DEBUG: Finished processing fetch batch request message for urls for refresh rate ${batchRequest.rateSeconds}s. Flushed pending inserts.`,
-        );
-      }
     } catch (err) {
       logger.error(`Error processing fetch batch request message`, {
-        event: batchRequest,
+        event: message,
         err: (err as Error).stack,
       });
     }
@@ -285,12 +165,29 @@ export class FeedFetcherListenerService {
     saveToObjectStorage?: boolean;
     headers?: Record<string, string>;
   }): Promise<{
-    emitFetchCompleted: boolean;
+    successful: boolean;
     request?: PartitionedRequestInsert;
   }> {
     const url = data.url;
     const rateSeconds = data.rateSeconds;
     const lookupKey = data.lookupKey;
+
+    const dateToCheck = dayjs()
+      .subtract(Math.round(rateSeconds * 0.75), 'seconds')
+      .toDate();
+
+    const latestRequestAfterTime = await this.getLatestRequestAfterTime(
+      { url },
+      dateToCheck,
+    );
+
+    if (latestRequestAfterTime) {
+      logger.debug(
+        `Request ${url} with rate ${rateSeconds} has been recently processed, skipping`,
+      );
+
+      return { successful: latestRequestAfterTime.status === RequestStatus.OK };
+    }
 
     const { skip, nextRetryDate, failedAttemptsCount } =
       await this.shouldSkipAfterPreviousFailedAttempt({
@@ -304,28 +201,7 @@ export class FeedFetcherListenerService {
           `recently failed and will be skipped until ${nextRetryDate}`,
       );
 
-      return { emitFetchCompleted: false };
-    }
-
-    const { isCacheStillActive, latestOkRequest } =
-      await this.isLatestResponseStillFreshInCache({
-        lookupKey: lookupKey || url,
-      });
-
-    if (isCacheStillActive) {
-      logger.debug(
-        `Request with lookup key ${
-          lookupKey || url
-        } still has active cache-control, skipping`,
-      );
-
-      return { emitFetchCompleted: false };
-    }
-
-    if (data.saveToObjectStorage) {
-      logger.info(
-        `DEBUG: About to fetch and response for ${url} for refresh rate ${data.rateSeconds}s`,
-      );
+      return { successful: false };
     }
 
     const { request } = await this.feedFetcherService.fetchAndSaveResponse(
@@ -338,12 +214,7 @@ export class FeedFetcherListenerService {
             }
           : undefined,
         source: RequestSource.Schedule,
-        headers: {
-          ...data.headers,
-          'If-Modified-Since':
-            latestOkRequest?.responseHeaders?.['last-modified'] || '',
-          'If-None-Match': latestOkRequest?.responseHeaders?.etag,
-        },
+        headers: data.headers,
       },
     );
 
@@ -366,7 +237,7 @@ export class FeedFetcherListenerService {
 
     return {
       request,
-      emitFetchCompleted: request.status === RequestStatus.OK,
+      successful: request.status === RequestStatus.OK,
     };
   }
 
@@ -511,12 +382,10 @@ export class FeedFetcherListenerService {
     lookupKey,
     url,
     rateSeconds,
-    debug,
   }: {
     lookupKey?: string;
     url: string;
     rateSeconds: number;
-    debug?: boolean;
   }) {
     try {
       logger.debug(
@@ -531,14 +400,12 @@ export class FeedFetcherListenerService {
           lookupKey?: string;
           url: string;
           rateSeconds: number;
-          debug?: boolean;
         };
       }>('', 'url.fetch.completed', {
         data: {
           lookupKey,
           url,
           rateSeconds,
-          debug,
         },
       });
     } catch (err) {
@@ -549,50 +416,6 @@ export class FeedFetcherListenerService {
     }
   }
 
-  async isLatestResponseStillFreshInCache({
-    lookupKey,
-  }: {
-    lookupKey: string;
-  }): Promise<{
-    isCacheStillActive: boolean;
-    latestOkRequest?: Awaited<
-      ReturnType<
-        typeof FeedFetcherListenerService.prototype.partitionedRequestsStoreService.getLatestRequestWithOkStatus
-      >
-    >;
-  }> {
-    const latestOkRequest =
-      await this.partitionedRequestsStoreService.getLatestRequestWithOkStatus(
-        lookupKey,
-        {
-          fields: ['response_headers'],
-        },
-      );
-
-    if (!latestOkRequest) {
-      return {
-        isCacheStillActive: false,
-      };
-    }
-
-    const { capped: freshnessLifetime } = calculateResponseFreshnessLifetime({
-      headers: latestOkRequest.responseHeaders || {},
-    });
-
-    const currentAgeOfResponse = calculateCurrentResponseAge({
-      headers: latestOkRequest.responseHeaders || {},
-      requestTime: latestOkRequest.createdAt,
-      responseTime: latestOkRequest?.requestInitiatedAt,
-    });
-
-    const responseIsFresh = freshnessLifetime > currentAgeOfResponse;
-
-    return {
-      latestOkRequest,
-      isCacheStillActive: freshnessLifetime ? responseIsFresh : false,
-    };
-  }
-
   async countFailedRequests({
     lookupKey,
     url,
@@ -601,9 +424,8 @@ export class FeedFetcherListenerService {
     url: string;
   }): Promise<number> {
     const latestOkRequest =
-      await this.partitionedRequestsStoreService.getLatestRequestWithOkStatus(
+      await this.partitionedRequestsStoreService.getLatestOkRequest(
         lookupKey || url,
-        {},
       );
 
     return this.partitionedRequestsStoreService.countFailedRequests(
@@ -618,5 +440,18 @@ export class FeedFetcherListenerService {
       Math.pow(2, attemptsSoFar);
 
     return dayjs(referenceDate).add(minutesToWait, 'minute').toDate();
+  }
+
+  async getLatestRequestAfterTime(
+    requestQuery: {
+      lookupKey?: string;
+      url: string;
+    },
+    time: Date,
+  ) {
+    return this.partitionedRequestsStoreService.getLatestStatusAfterTime(
+      requestQuery.lookupKey || requestQuery.url,
+      time,
+    );
   }
 }

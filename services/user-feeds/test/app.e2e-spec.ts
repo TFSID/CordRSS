@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 import { AppModule } from "./../src/app.module";
 import {
   setupIntegrationTests,
@@ -12,7 +11,6 @@ import {
   ArticleDeliveryStatus,
   ArticleDiscordFormatted,
   FeedResponseRequestStatus,
-  FeedV2Event,
 } from "../src/shared";
 import { describe, before, after, it, beforeEach } from "node:test";
 import { FeedFetcherService } from "../src/feed-fetcher/feed-fetcher.service";
@@ -22,12 +20,9 @@ import testFeedV2Event from "./data/test-feed-v2-event";
 import getTestRssFeed, { DEFAULT_TEST_ARTICLES } from "./data/test-rss-feed";
 import { randomUUID } from "crypto";
 import pruneAndCreatePartitions from "../src/shared/utils/prune-and-create-partitions";
-import { PartitionedFeedArticleFieldStoreService } from "../src/articles/partitioned-feed-article-field-store.service";
-import { generateDeliveryId } from "../src/shared/utils/generate-delivery-id";
 
 describe("App (e2e)", () => {
   let feedEventHandler: FeedEventHandlerService;
-  let partitionedFeedArticleStoreService: PartitionedFeedArticleFieldStoreService;
   const feedFetcherService: FeedFetcherService = {
     fetch: async () => ({
       requestStatus: FeedResponseRequestStatus.Success,
@@ -39,7 +34,7 @@ describe("App (e2e)", () => {
     deliverArticle: async (article: ArticleDiscordFormatted) =>
       [
         {
-          id: generateDeliveryId(),
+          id: article.flattened.id,
           articleIdHash: article.flattened.idHash,
           status: ArticleDeliveryStatus.Sent,
           mediumId: "medium-id",
@@ -63,9 +58,6 @@ describe("App (e2e)", () => {
 
     const { module: appModule } = await init();
     feedEventHandler = appModule.get(FeedEventHandlerService);
-    partitionedFeedArticleStoreService = appModule.get(
-      PartitionedFeedArticleFieldStoreService
-    );
 
     await pruneAndCreatePartitions(appModule);
   });
@@ -74,19 +66,8 @@ describe("App (e2e)", () => {
     await teardownIntegrationTests();
   });
 
-  const runEvent = async (event: FeedV2Event) => {
-    return partitionedFeedArticleStoreService.startContext(async () =>
-      feedEventHandler.handleV2EventWithDb(event)
-    );
-  };
-
   beforeEach(async () => {
-    feedFetcherService.fetch = async () => ({
-      requestStatus: FeedResponseRequestStatus.Success,
-      body: getTestRssFeed(),
-      bodyHash: "bodyhash",
-    });
-    await runEvent(testFeedV2Event);
+    await feedEventHandler.handleV2EventWithDb(testFeedV2Event);
   });
 
   it("sends new articles based on guid", async () => {
@@ -100,9 +81,8 @@ describe("App (e2e)", () => {
       bodyHash: randomUUID(),
     });
 
-    const results = await runEvent(testFeedV2Event);
+    const results = await feedEventHandler.handleV2EventWithDb(testFeedV2Event);
     deepStrictEqual(results?.length, 1);
-    deepStrictEqual(results?.[0].status, ArticleDeliveryStatus.Sent);
   });
 
   it("does not send new articles if blocked by comparisons", async () => {
@@ -118,7 +98,9 @@ describe("App (e2e)", () => {
     };
 
     // Initialize the comparisons storage first
-    await runEvent(feedEventWithBlockingComparisons);
+    await feedEventHandler.handleV2EventWithDb(
+      feedEventWithBlockingComparisons
+    );
 
     feedFetcherService.fetch = async () => ({
       requestStatus: FeedResponseRequestStatus.Success,
@@ -131,7 +113,9 @@ describe("App (e2e)", () => {
       bodyHash: randomUUID(),
     });
 
-    const results = await runEvent(feedEventWithBlockingComparisons);
+    const results = await feedEventHandler.handleV2EventWithDb(
+      feedEventWithBlockingComparisons
+    );
 
     deepStrictEqual(results?.length, 0);
   });
@@ -148,70 +132,37 @@ describe("App (e2e)", () => {
       },
     };
 
-    // Initialize the comparisons storage first
-    await runEvent(feedEventWithPassingComparisons);
+    const initialArticles = [
+      {
+        guid: randomUUID(),
+        title: DEFAULT_TEST_ARTICLES[0].title,
+      },
+    ];
 
     feedFetcherService.fetch = async () => ({
       requestStatus: FeedResponseRequestStatus.Success,
-      body: getTestRssFeed(
-        [
-          {
-            guid: DEFAULT_TEST_ARTICLES[0].guid,
-            title: DEFAULT_TEST_ARTICLES[0].title + "-different",
-          },
-        ],
-        true
-      ),
+      body: getTestRssFeed(initialArticles),
       bodyHash: randomUUID(),
     });
 
-    const results = await runEvent(feedEventWithPassingComparisons);
+    // Initialize the comparisons storage first
+    await feedEventHandler.handleV2EventWithDb(feedEventWithPassingComparisons);
+
+    feedFetcherService.fetch = async () => ({
+      requestStatus: FeedResponseRequestStatus.Success,
+      body: getTestRssFeed([
+        {
+          guid: initialArticles[0].guid,
+          title: initialArticles[0].title + "-different",
+        },
+      ]),
+      bodyHash: randomUUID(),
+    });
+
+    const results = await feedEventHandler.handleV2EventWithDb(
+      feedEventWithPassingComparisons
+    );
 
     deepStrictEqual(results?.length, 1);
-    deepStrictEqual(results?.[0].status, ArticleDeliveryStatus.Sent);
-
-    feedFetcherService.fetch = async () => ({
-      requestStatus: FeedResponseRequestStatus.Success,
-      body: getTestRssFeed(
-        [
-          {
-            guid: DEFAULT_TEST_ARTICLES[0].guid,
-            title: DEFAULT_TEST_ARTICLES[0].title + "-different2",
-          },
-        ],
-        true
-      ),
-      bodyHash: randomUUID(),
-    });
-    const results2 = await runEvent(feedEventWithPassingComparisons);
-
-    deepStrictEqual(results2?.length, 1);
-    deepStrictEqual(results2?.[0].status, ArticleDeliveryStatus.Sent);
-  });
-
-  it("does not send new articles based on passing comparisons if there are no new articles", async () => {
-    const feedEventWithPassingComparisons = {
-      ...testFeedV2Event,
-      data: {
-        ...testFeedV2Event.data,
-        feed: {
-          ...testFeedV2Event.data.feed,
-          passingComparisons: ["rss:title__#"],
-        },
-      },
-    };
-
-    // Initialize the comparisons storage first
-    await runEvent(feedEventWithPassingComparisons);
-
-    feedFetcherService.fetch = async () => ({
-      requestStatus: FeedResponseRequestStatus.Success,
-      body: getTestRssFeed(),
-      bodyHash: randomUUID(),
-    });
-
-    const results = await runEvent(feedEventWithPassingComparisons);
-
-    deepStrictEqual(results?.length, 0);
   });
 });

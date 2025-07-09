@@ -1,15 +1,15 @@
-import { MikroOrmModule } from "@mikro-orm/nestjs";
+import { EntityName, MikroOrmModule } from "@mikro-orm/nestjs";
 import { ModuleMetadata } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import type { TestingModule } from "@nestjs/testing";
 import { config } from "../../config";
-import { EntityName, MikroORM } from "@mikro-orm/core";
+import { MikroORM } from "@mikro-orm/core";
 import { randomUUID } from "crypto";
-import { PostgreSqlDriver, SqlEntityManager } from "@mikro-orm/postgresql";
+import { SqlEntityManager } from "@mikro-orm/postgresql";
 import {
   FastifyAdapter,
   NestFastifyApplication,
 } from "@nestjs/platform-fastify";
-import { TestingModule } from "@nestjs/testing";
 
 let testingModule: TestingModule;
 let orm: MikroORM;
@@ -40,12 +40,11 @@ export async function setupIntegrationTests(
       }),
       MikroOrmModule.forFeature(options?.models || []),
       MikroOrmModule.forRoot({
-        driver: PostgreSqlDriver,
         entities: ["dist/**/*.entity.js"],
         entitiesTs: ["src/**/*.entity.ts"],
         clientUrl: configVals.USER_FEEDS_POSTGRES_URI,
         dbName: configVals.USER_FEEDS_POSTGRES_DATABASE,
-        // type: "postgresql",
+        type: "postgresql",
         forceUtcTimezone: true,
         timezone: "UTC",
         schema: postgresSchema,

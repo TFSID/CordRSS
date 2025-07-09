@@ -7,17 +7,15 @@ import { UserFeedFeature } from "../user-feeds/entities";
 import { UserFeedsModule } from "../user-feeds/user-feeds.module";
 import { UserFeedManagementInvitesController } from "./user-feed-management-invites.controller";
 import { UserFeedManagementInvitesService } from "./user-feed-management-invites.service";
-import { UsersModule } from "../users/users.module";
 
 @Module({
   controllers: [UserFeedManagementInvitesController],
   providers: [UserFeedManagementInvitesService],
   imports: [
     MongooseModule.forFeature([UserFeedFeature]),
-    UserFeedsModule,
+    UserFeedsModule.forRoot(),
     SupportersModule,
     DiscordAuthModule,
-    UsersModule,
   ],
   exports: [UserFeedManagementInvitesService],
 })

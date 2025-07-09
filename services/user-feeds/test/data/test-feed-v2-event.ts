@@ -4,9 +4,9 @@ const testFeedV2Event: FeedV2Event = {
   timestamp: new Date().getTime(),
   debug: true,
   data: {
-    articleDayLimit: 100,
+    articleDayLimit: 1,
     feed: {
-      id: "6755bb6828cc1c723cf53880",
+      id: "feed-id",
       blockingComparisons: [],
       passingComparisons: [],
       url: "https://www.some-feed.com/rss",

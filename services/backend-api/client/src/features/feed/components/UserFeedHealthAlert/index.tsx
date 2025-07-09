@@ -18,11 +18,12 @@ import {
   useCreateUserFeedManualRequest,
   useUserFeedRequestsWithPagination,
 } from "../..";
+import { notifySuccess } from "../../../../utils/notifySuccess";
+import { notifyError } from "../../../../utils/notifyError";
 import ApiAdapterError from "../../../../utils/ApiAdapterError";
 import { pages } from "../../../../constants";
 import { UserFeedTabSearchParam } from "../../../../constants/userFeedTabSearchParam";
 import { FixFeedRequestsCTA } from "../FixFeedRequestsCTA";
-import { usePageAlertContext } from "../../../../contexts/PageAlertContext";
 
 const RESOLVABLE_STATUS_CODES = [429, 403, 401];
 
@@ -34,7 +35,6 @@ export const UserFeedHealthAlert = () => {
     data: {},
   });
   const { mutateAsync, status: manualRequestStatus } = useCreateUserFeedManualRequest();
-  const { createErrorAlert, createSuccessAlert } = usePageAlertContext();
   const navigate = useNavigate();
 
   const handleManualAttempt = async () => {
@@ -46,27 +46,19 @@ export const UserFeedHealthAlert = () => {
       });
 
       if (requestStatus === UserFeedArticleRequestStatus.Success) {
-        createSuccessAlert({
-          title: "Request to feed was successful.",
-        });
+        notifySuccess(`Request was successful`);
       } else {
         const message = getErrorMessageForArticleRequestStatus(requestStatus, requestStatusCode);
-        createErrorAlert({
-          title: "Request to feed was not successful.",
-          description: t(message.ref),
-        });
+        notifyError(`Request to feed was not successful`, t(message.ref));
       }
     } catch (err) {
       if (err instanceof ApiAdapterError && err.statusCode === 422) {
-        createErrorAlert({
-          title: "Failed to make request",
-          description: `Please wait ${err.body?.result?.minutesUntilNextRequest} minute(s) before trying again.`,
-        });
+        notifyError(
+          `Failed to make request`,
+          `Please wait ${err.body?.result?.minutesUntilNextRequest} minute(s) before trying again.`
+        );
       } else {
-        createErrorAlert({
-          title: "Failed to make request",
-          description: (err as Error).message,
-        });
+        notifyError(`Failed to make request`, (err as Error).message);
       }
     }
   };
@@ -100,7 +92,7 @@ export const UserFeedHealthAlert = () => {
               You may also manually attempt a request via the button below.
               <HStack>
                 <Button isLoading={manualRequestStatus === "loading"} onClick={handleManualAttempt}>
-                  <span>Retry feed request</span>
+                  <span>Attempt request</span>
                 </Button>
                 <Button
                   variant="outline"

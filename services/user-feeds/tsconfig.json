@@ -1,7 +1,4 @@
 {
-  "watchOptions": {
-    "watchFile": "fixedPollingInterval"
-  },
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,

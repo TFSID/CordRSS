@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import logger from '../utils/logger';
 import { RequestStatus } from './constants';
 import { Request, Response } from './entities';
-import { deflate, inflate, gunzip } from 'zlib';
+import { deflate, inflate } from 'zlib';
 import { promisify } from 'util';
 import { ObjectFileStorageService } from '../object-file-storage/object-file-storage.service';
 import { createHash, randomUUID } from 'crypto';
@@ -19,7 +19,6 @@ import { GetFeedRequestsInputDto } from './dto';
 
 const deflatePromise = promisify(deflate);
 const inflatePromise = promisify(inflate);
-const gunzipPromise = promisify(gunzip);
 
 const sha1 = createHash('sha1');
 
@@ -31,47 +30,24 @@ const convertHeaderValue = (val?: string | string[] | null) => {
   return val || '';
 };
 
-const trimHeadersForStorage = (
-  obj?: Record<string, string | undefined>,
-): Record<string, string> => {
+const trimHeadersForStorage = (obj?: HeadersInit) => {
   if (!obj) {
-    return {};
+    return obj;
   }
 
-  const trimmed = Object.entries(obj || {}).reduce((acc, [key, val]) => {
-    if (val) {
-      acc[key.toLowerCase()] = val;
+  const newObj: HeadersInit = {};
+
+  for (const key in obj) {
+    if (obj[key]) {
+      newObj[key.toLowerCase()] = obj[key];
     }
-
-    return acc;
-  }, {} as Record<string, string>);
-
-  if (trimmed.authorization) {
-    trimmed.authorization = 'SECRET';
   }
 
-  return trimmed;
-};
+  if (newObj.authorization) {
+    newObj.authorization = 'SECRET';
+  }
 
-const convertFetchOptionsForHashKey = (options: FetchOptions) => {
-  const { headers, ...rest } = options;
-
-  const prunedHeaders = Object.entries(headers || {}).reduce(
-    (acc, [key, val]) => {
-      // these keys would result in a new hash every time, so ignore it to save space
-      if (key !== 'if-none-match' && key !== 'if-modified-since') {
-        acc[key] = val;
-      }
-
-      return acc;
-    },
-    {} as Record<string, string>,
-  );
-
-  return JSON.stringify({
-    ...rest,
-    headers: prunedHeaders,
-  });
+  return newObj;
 };
 
 interface FetchOptions {
@@ -82,8 +58,9 @@ interface FetchOptions {
 interface FetchResponse {
   ok: boolean;
   status: number;
-  headers: Map<string, string>;
+  headers: Map<'etag' | 'last-modified' | 'server' | 'content-type', string>;
   text: () => Promise<string>;
+  arrayBuffer: () => Promise<ArrayBuffer>;
 }
 
 @Injectable()
@@ -105,21 +82,12 @@ export class FeedFetcherService {
     );
   }
 
-  async getRequests({
-    skip,
-    limit,
-    url,
-    lookupKey,
-    afterDate,
-    beforeDate,
-  }: GetFeedRequestsInputDto) {
+  async getRequests({ skip, limit, url, lookupKey }: GetFeedRequestsInputDto) {
     return this.partitionedRequestsStore.getRequests({
       limit,
       skip,
       url,
       lookupKey,
-      afterDate,
-      beforeDate,
     });
   }
 
@@ -131,6 +99,32 @@ export class FeedFetcherService {
     return this.partitionedRequestsStore.getLatestNextRetryDate(lookupKey);
   }
 
+  // async getLatestRequestHeaders({
+  //   url,
+  // }: {
+  //   url: string;
+  // }): Promise<Response['headers']> {
+  //   const request = await this.requestRepo.findOne(
+  //     {
+  //       url,
+  //       status: RequestStatus.OK,
+  //     },
+  //     {
+  //       orderBy: {
+  //         createdAt: 'DESC',
+  //       },
+  //       populate: ['response'],
+  //       fields: ['response.headers'],
+  //     },
+  //   );
+
+  //   if (!request) {
+  //     return {};
+  //   }
+
+  //   return request.response?.headers || {};
+  // }
+
   async getLatestRequest({
     url,
     lookupKey,
@@ -141,31 +135,39 @@ export class FeedFetcherService {
     request: Request;
     decodedResponseText: string | null | undefined;
   } | null> {
-    const request =
-      await this.partitionedRequestsStore.getLatestRequestWithResponseBody(
-        lookupKey || url,
-      );
+    const logDebug =
+      url ===
+      'https://www.clanaod.net/forums/external.php?type=RSS2&forumids=102';
+
+    const request = await this.partitionedRequestsStore.getLatestRequest(
+      lookupKey || url,
+    );
 
     if (!request) {
+      if (logDebug) {
+        logger.warn(`Running debug on schedule: no request was found`);
+      }
+
       return null;
     }
 
-    if (request.response?.redisCacheKey || request.response?.content) {
-      let compressedText: string | null = null;
-
-      if (request.response.content) {
-        compressedText = request.response.content;
-      } else if (request.response.redisCacheKey) {
-        compressedText = await this.cacheStorageService.getFeedHtmlContent({
-          key: request.response.redisCacheKey,
-        });
-      }
+    if (request.response?.redisCacheKey) {
+      const compressedText = await this.cacheStorageService.getFeedHtmlContent({
+        key: request.response.redisCacheKey,
+      });
 
       const text = compressedText
         ? (
             await inflatePromise(Buffer.from(compressedText, 'base64'))
           ).toString()
         : '';
+
+      if (logDebug) {
+        logger.warn(
+          `Running debug on schedule: got cache key ${request.response.redisCacheKey}`,
+          { text },
+        );
+      }
 
       return {
         request,
@@ -184,8 +186,9 @@ export class FeedFetcherService {
             key: string;
           }
         | undefined;
+      flushEntities?: boolean;
       saveResponseToObjectStorage?: boolean;
-      headers?: Record<string, string | undefined>;
+      headers?: Record<string, string>;
       source: RequestSource | undefined;
     },
   ): Promise<{
@@ -198,7 +201,6 @@ export class FeedFetcherService {
           this.configService.get<string>('feedUserAgent') ||
           this.defaultUserAgent,
         accept: 'text/html,text/xml,application/xml,application/rss+xml',
-        'accept-encoding': 'gzip',
         /**
          * Currently required for https://developer.oculus.com/blog/rss/ that returns 400 otherwise
          * Appears to be temporary error given that the page says they're working on fixing it
@@ -218,12 +220,6 @@ export class FeedFetcherService {
     };
 
     try {
-      if (options?.saveResponseToObjectStorage) {
-        logger.info(
-          `DEBUG: Fetching ${url} and saving to object storage for url ${url}`,
-        );
-      }
-
       const res = await this.fetchFeedResponse(
         url,
         fetchOptions,
@@ -236,20 +232,29 @@ export class FeedFetcherService {
         request.status = RequestStatus.BAD_STATUS_CODE;
       }
 
+      const etag = res.headers.get('etag');
+      const lastModified = res.headers.get('last-modified');
+
       const response = new Response();
+      response.createdAt = request.createdAt;
       response.statusCode = res.status;
-      const headersToStore: Record<string, string> = {};
+      response.headers = {};
 
-      res.headers.forEach((val, key) => {
-        headersToStore[key] = val;
-      });
+      if (etag) {
+        response.headers.etag = etag;
+      }
 
-      response.headers = headersToStore;
+      if (lastModified) {
+        response.headers.lastModified = lastModified;
+      }
 
       let text: string | null = null;
 
       try {
-        text = res.status === HttpStatus.NOT_MODIFIED ? '' : await res.text();
+        text =
+          res.status === HttpStatus.NOT_MODIFIED
+            ? ''
+            : await this.maybeDecodeResponse(res);
 
         if (request.status !== RequestStatus.OK) {
           logger.debug(`Bad status code ${res.status} for url ${url}`, {
@@ -285,16 +290,15 @@ export class FeedFetcherService {
             }
           }
 
-          const key =
-            url +
-            convertFetchOptionsForHashKey(request.fetchOptions) +
-            res.status.toString();
+          response.redisCacheKey = sha1.copy().update(url).digest('hex');
+          response.textHash = text
+            ? sha1.copy().update(text).digest('hex')
+            : '';
 
-          if (text.length) {
-            response.responseHashKey = sha1.copy().update(key).digest('hex');
-
-            response.content = compressedText;
-          }
+          await this.cacheStorageService.setFeedHtmlContent({
+            key: response.redisCacheKey,
+            body: compressedText,
+          });
         } catch (err) {
           if (err instanceof FeedTooLargeException) {
             throw err;
@@ -326,11 +330,9 @@ export class FeedFetcherService {
       request.response = response;
 
       const partitionedRequest: PartitionedRequestInsert = {
-        id: randomUUID(),
         url: request.url,
         lookupKey: request.lookupKey,
-        createdAt: response.createdAt,
-        requestInitiatedAt: request.createdAt,
+        createdAt: request.createdAt,
         errorMessage: request.errorMessage || null,
         fetchOptions: request.fetchOptions || null,
         nextRetryDate: request.nextRetryDate,
@@ -342,22 +344,12 @@ export class FeedFetcherService {
           s3ObjectKey: response.s3ObjectKey || null,
           redisCacheKey: response.redisCacheKey || null,
           headers: response.headers,
-          body:
-            response.responseHashKey && response.content
-              ? {
-                  hashKey: response.responseHashKey,
-                  contents: response.content,
-                }
-              : null,
         },
       };
 
-      if (options?.saveResponseToObjectStorage) {
-        logger.info(
-          `DEBUG: Marking ${url} for persistence`,
-          partitionedRequest,
-        );
-      }
+      await this.partitionedRequestsStore.markForPersistence(
+        partitionedRequest,
+      );
 
       return {
         request: partitionedRequest,
@@ -374,10 +366,7 @@ export class FeedFetcherService {
       ) {
         request.status = RequestStatus.INVALID_SSL_CERTIFICATE;
         request.errorMessage = err['cause']?.['message'];
-      } else if (
-        (err as Error).name === 'AbortError' ||
-        (err as Error).message.includes('Connect Timeout Error')
-      ) {
+      } else if ((err as Error).name === 'AbortError') {
         request.status = RequestStatus.FETCH_TIMEOUT;
         request.errorMessage =
           `Request took longer than` +
@@ -390,7 +379,6 @@ export class FeedFetcherService {
       }
 
       const partitionedRequest: PartitionedRequestInsert = {
-        id: randomUUID(),
         url: request.url,
         lookupKey: request.lookupKey,
         createdAt: request.createdAt,
@@ -400,10 +388,17 @@ export class FeedFetcherService {
         source: (request.source as RequestSource | null) || null,
         status: request.status,
         response: null,
-        requestInitiatedAt: request.createdAt,
       };
 
+      await this.partitionedRequestsStore.markForPersistence(
+        partitionedRequest,
+      );
+
       return { request: partitionedRequest };
+    } finally {
+      if (options?.flushEntities) {
+        await this.partitionedRequestsStore.flushPendingInserts();
+      }
     }
   }
 
@@ -418,19 +413,10 @@ export class FeedFetcherService {
       controller.abort();
     }, this.feedRequestTimeoutMs);
 
-    // Necessary since passing If-None-Match header with empty string may cause a 200 when expecting 304
-    const withoutEmptyHeaderVals = Object.entries(
-      options?.headers || {},
-    ).reduce((acc, [key, val]) => {
-      if (val) {
-        acc[key] = val;
-      }
-
-      return acc;
-    }, {});
-
     const useOptions = {
-      headers: withoutEmptyHeaderVals,
+      headers: {
+        ...options?.headers,
+      },
       redirect: 'follow' as const,
       signal: controller.signal,
     };
@@ -448,11 +434,6 @@ export class FeedFetcherService {
       maxRedirections: 10,
     });
 
-    const contentTypes =
-      typeof r.headers['content-type'] === 'string'
-        ? r.headers['content-type'].split(';')
-        : r.headers['content-type'] || [];
-
     const normalizedHeaders = Object.entries(r.headers).reduce(
       (acc, [key, val]) => {
         if (typeof val === 'string') {
@@ -468,75 +449,43 @@ export class FeedFetcherService {
 
     const headers: FetchResponse['headers'] = new Map();
 
-    const etag = normalizedHeaders.get('etag');
-
-    if (etag) {
-      headers.set('etag', convertHeaderValue(etag));
-    }
-
-    const contentType = normalizedHeaders.get('content-type');
-
-    if (contentType) {
-      headers.set('content-type', convertHeaderValue(contentType));
-    }
-
-    const lastModified = normalizedHeaders.get('last-modified');
-
-    if (lastModified) {
-      headers.set('last-modified', convertHeaderValue(lastModified));
-    }
-
-    const server = normalizedHeaders.get('server');
-
-    if (server) {
-      headers.set('server', convertHeaderValue(server));
-    }
-
-    const cacheControl = normalizedHeaders.get('cache-control');
-
-    if (cacheControl) {
-      headers.set('cache-control', convertHeaderValue(cacheControl));
-    }
-
-    const date = normalizedHeaders.get('date');
-
-    if (date) {
-      headers.set('date', convertHeaderValue(date));
-    }
-
-    const expires = normalizedHeaders.get('expires');
-
-    if (expires) {
-      headers.set('expires', convertHeaderValue(expires));
-    }
+    headers.set('etag', convertHeaderValue(normalizedHeaders.get('etag')));
+    headers.set(
+      'content-type',
+      convertHeaderValue(normalizedHeaders.get('content-type')),
+    );
+    headers.set(
+      'last-modified',
+      convertHeaderValue(normalizedHeaders.get('last-modified')),
+    );
+    headers.set('server', convertHeaderValue(normalizedHeaders.get('server')));
 
     return {
       headers,
       ok: r.statusCode >= 200 && r.statusCode < 300,
       status: r.statusCode,
-      text: async () => {
-        const charset = contentTypes
-          .find((s) => s.includes('charset'))
-          ?.split('=')[1]
-          .trim();
-
-        let responseBuffer: Buffer;
-
-        // handle gzip
-        if (r.headers['content-encoding']?.includes('gzip')) {
-          responseBuffer = await gunzipPromise(await r.body.arrayBuffer());
-        } else {
-          responseBuffer = Buffer.from(await r.body.arrayBuffer());
-        }
-
-        if (!charset || /utf-*8/i.test(charset)) {
-          return responseBuffer.toString();
-        }
-
-        const decoded = iconv.decode(responseBuffer, charset).toString();
-
-        return decoded;
-      },
+      text: () => r.body.text(),
+      arrayBuffer: () => r.body.arrayBuffer(),
     };
+  }
+
+  private async maybeDecodeResponse(
+    res: Awaited<FetchResponse>,
+  ): Promise<string> {
+    const charset = res.headers
+      .get('content-type')
+      ?.split(';')
+      .find((s) => s.includes('charset'))
+      ?.split('=')[1]
+      .trim();
+
+    if (!charset || /utf-*8/i.test(charset)) {
+      return res.text();
+    }
+
+    const arrBuffer = await res.arrayBuffer();
+    const decoded = iconv.decode(Buffer.from(arrBuffer), charset).toString();
+
+    return decoded;
   }
 }

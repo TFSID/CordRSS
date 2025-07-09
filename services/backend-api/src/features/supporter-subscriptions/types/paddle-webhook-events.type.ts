@@ -22,9 +22,6 @@ export interface PaddleEventSubscriptionUpdated {
     status: PaddleSubscriptionStatus;
     customer_id: string;
     created_at: string;
-    custom_data: {
-      userId: string;
-    };
     updated_at: string;
     items: Array<{
       price: {
@@ -57,9 +54,6 @@ export interface PaddleEventSubscriptionActivated {
     status: PaddleSubscriptionStatus;
     customer_id: string;
     created_at: string;
-    custom_data: {
-      userId?: string;
-    };
     updated_at: string;
     items: Array<{
       price: {

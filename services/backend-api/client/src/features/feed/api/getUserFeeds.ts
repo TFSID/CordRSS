@@ -1,6 +1,6 @@
 import { array, InferType, number, object } from "yup";
 import fetchRest from "../../../utils/fetchRest";
-import { UserFeedComputedStatus, UserFeedDisabledCode, UserFeedSummarySchema } from "../types";
+import { UserFeedComputedStatus, UserFeedSummarySchema } from "../types";
 
 export interface GetUserFeedsInput {
   limit?: number;
@@ -9,7 +9,6 @@ export interface GetUserFeedsInput {
   sort?: string;
   filters?: {
     computedStatuses?: UserFeedComputedStatus[];
-    disabledCodes?: UserFeedDisabledCode[];
   };
 }
 
@@ -28,10 +27,6 @@ export const getUserFeeds = async (options: GetUserFeedsInput): Promise<GetUserF
   params.append("search", options.search || "");
   params.append("sort", options.sort || "");
   params.append(`filters[computedStatuses]`, options.filters?.computedStatuses?.join(",") || "");
-
-  if (options.filters?.disabledCodes) {
-    params.append(`filters[disabledCodes]`, options.filters?.disabledCodes?.join(",") || "");
-  }
 
   const searchParams = params.toString();
 

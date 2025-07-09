@@ -7,20 +7,12 @@ export function getPrettyConnectionName(connection: FeedDiscordChannelConnection
     const casted = connection as FeedDiscordChannelConnection;
 
     if (casted.details.channel) {
-      if (casted.details.channel.type === "new-thread") {
-        return "Discord Channel (New threads)";
-      }
-
       if (casted.details.channel.type === "thread") {
         return "Discord Thread";
       }
 
       if (casted.details.channel.type === "forum") {
         return "Discord Forum";
-      }
-
-      if (casted.details.channel.type === "forum-thread") {
-        return "Discord Forum Thread";
       }
 
       return "Discord Channel";

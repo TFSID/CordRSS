@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 import { z } from "zod";
 import { CustomPlaceholderStepType } from "../constants";
 
@@ -29,24 +28,13 @@ export const discordMediumPayloadDetailsSchema = z.object({
     .object({
       id: z.string(),
       type: z
-        .union([
-          z.literal("forum"),
-          z.literal("thread"),
-          z.literal("new-thread"),
-          z.literal("forum-thread"),
-        ])
+        .union([z.literal("forum"), z.literal("thread")])
         .optional()
         .nullable(),
     })
     .optional()
     .nullable()
     .default(null),
-  channelNewThreadTitle: z.string().optional().nullable(),
-  channelNewThreadExcludesPreview: z
-    .boolean()
-    .optional()
-    .nullable()
-    .default(false),
   webhook: z
     .object({
       id: z.string(),

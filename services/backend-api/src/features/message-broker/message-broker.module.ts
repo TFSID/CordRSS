@@ -9,35 +9,36 @@ import logger from "../../utils/logger";
 import { MessageBrokerService } from "./message-broker.service";
 
 @Module({
-  providers: [MessageBrokerService],
-  imports: [
-    RabbitMQModule.forRootAsync({
-      useFactory: () => {
-        const configValues = config();
+  providers: [],
+  imports: [],
+})
+export class MessageBrokerModule implements OnApplicationShutdown {
+  static forRoot(): DynamicModule {
+    const configValues = config();
 
-        return {
+    return {
+      module: MessageBrokerModule,
+      providers: [MessageBrokerService],
+      imports: [
+        RabbitMQModule.forRoot(RabbitMQModule, {
           uri: configValues.BACKEND_API_RABBITMQ_BROKER_URL,
           connectionInitOptions: {
             wait: false,
           },
+          connectionManagerOptions: {
+            heartbeatIntervalInSeconds: 0,
+          },
           defaultExchangeType: "direct",
-          defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.ACK,
+          defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.NACK,
           channels: {
             default: {
               prefetchCount: 100,
               default: true,
             },
           },
-        };
-      },
-    }),
-  ],
-  exports: [RabbitMQModule, MessageBrokerService],
-})
-export class MessageBrokerModule implements OnApplicationShutdown {
-  static forRoot(): DynamicModule {
-    return {
-      module: MessageBrokerModule,
+        }),
+      ],
+      exports: [RabbitMQModule, MessageBrokerService],
     };
   }
 

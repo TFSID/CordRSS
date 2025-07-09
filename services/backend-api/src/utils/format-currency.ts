@@ -18,7 +18,6 @@ const formattersByCurrency: Record<string, (input: string) => string> = {
   SGD: (input) => `S$${input}`,
   SEK: (input) => `${input} kr`,
   USD: (input) => `$${input}`,
-  JPY: (input) => `¥${input}`,
 };
 
 const ZERO_DECIMAL_CURRENCIES = ["JPY"];

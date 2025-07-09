@@ -9,10 +9,6 @@ interface Request {
 interface Result {
   requests: Request[];
   nextRetryTimestamp: number | null;
-  feedHostGlobalRateLimit: null | {
-    requestLimit: number;
-    intervalSec: number;
-  };
 }
 
 export interface GetFeedRequestsOutputDto {

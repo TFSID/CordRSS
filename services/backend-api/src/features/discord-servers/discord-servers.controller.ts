@@ -51,22 +51,14 @@ export class DiscordServersController {
   @Get(":serverId")
   @UseGuards(BotHasServerGuard)
   @UseGuards(UserManagesServerGuard)
-  async getServer(@Param("serverId") serverId: string): Promise<
-    GetServerOutputDto & {
-      result: {
-        includesBot: boolean;
-      };
-    }
-  > {
-    const [profile, { exists }] = await Promise.all([
-      this.discordServersService.getServerProfile(serverId),
-      this.discordServersService.getGuild(serverId),
-    ]);
+  async getServer(
+    @Param("serverId") serverId: string
+  ): Promise<GetServerOutputDto> {
+    const profile = await this.discordServersService.getServerProfile(serverId);
 
     return {
       result: {
         profile,
-        includesBot: exists,
       },
     };
   }
@@ -217,12 +209,12 @@ export class DiscordServersController {
   @CacheTTL(1)
   async getServerChannels(
     @Param("serverId") serverId: string,
-    @Query("types") types?: string
+    @Query("include") include?: string
   ): Promise<GetServerChannelsOutputDto> {
     const channels = await this.discordServersService.getTextChannelsOfServer(
       serverId,
       {
-        types: types?.split(","),
+        include: include?.split(","),
       }
     );
 

@@ -11,10 +11,7 @@ interface Props {
   onBlur: () => void;
   value?: string;
   isDisabled?: boolean;
-  inputId?: string;
-  isInvalid: boolean;
-  ariaLabelledBy: string;
-  types?: GetDiscordChannelType[];
+  include?: GetDiscordChannelType[];
 }
 
 const iconsByChannelType: Record<GetDiscordChannelType, React.ReactNode> = {
@@ -29,12 +26,9 @@ export const DiscordChannelDropdown: React.FC<Props> = ({
   onBlur,
   value,
   isDisabled,
-  inputId,
-  isInvalid,
-  ariaLabelledBy,
-  types,
+  include,
 }) => {
-  const { data, error, isFetching } = useDiscordServerChannels({ serverId, types });
+  const { data, error, isFetching } = useDiscordServerChannels({ serverId, include });
 
   const options =
     data?.results.map((channel) => ({
@@ -53,12 +47,6 @@ export const DiscordChannelDropdown: React.FC<Props> = ({
         onChange={(val, optionData) => onChange(val, optionData.name)}
         onBlur={onBlur}
         value={value}
-        isInvalid={isInvalid}
-        selectProps={{
-          inputId,
-          "aria-labelledby": ariaLabelledBy,
-        }}
-        placeholder={!serverId ? "Must select a Discord server first" : "Select a channel"}
       />
       {(!serverId || !error) && (
         <FormHelperText>Only channels that the bot can view will appear.</FormHelperText>

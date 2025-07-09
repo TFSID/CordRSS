@@ -11,14 +11,9 @@ interface Props {
   value?: string;
   isDisabled?: boolean;
   isClearable?: boolean;
-  inputId?: string;
-  ariaLabelledBy: string;
-  isInvalid: boolean;
-  placeholder?: string;
 }
 
 export const DiscordActiveThreadDropdown: React.FC<Props> = ({
-  placeholder,
   serverId,
   parentChannelId,
   onChange,
@@ -26,9 +21,6 @@ export const DiscordActiveThreadDropdown: React.FC<Props> = ({
   value,
   isDisabled,
   isClearable,
-  inputId,
-  ariaLabelledBy,
-  isInvalid,
 }) => {
   const { data, error, isFetching } = useDiscordServerActiveThreads({
     serverId,
@@ -55,12 +47,6 @@ export const DiscordActiveThreadDropdown: React.FC<Props> = ({
         onBlur={onBlur}
         value={value}
         isClearable={isClearable}
-        selectProps={{
-          inputId,
-          "aria-labelledby": ariaLabelledBy,
-        }}
-        isInvalid={isInvalid}
-        placeholder={placeholder}
       />
       {serverId && error && (
         <Alert status="error">

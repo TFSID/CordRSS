@@ -28,7 +28,6 @@ import { UserExternalCredentialStatus } from "../../common/constants/user-extern
 import { UserFeed, UserFeedModel } from "../user-feeds/entities";
 import { randomUUID } from "crypto";
 import { getRedditUrlRegex } from "../../utils/get-reddit-url-regex";
-import { UserFeedBulkWriteDocument } from "../user-feeds/user-feeds.service";
 
 function getPrettySubscriptioNameFromKey(key: string) {
   if (key === "free") {
@@ -208,7 +207,7 @@ export class UsersService {
 
     const { subscription, customer } =
       await this.supportersService.getSupporterSubscription({
-        discordUserId: user.discordUserId,
+        email: user.email,
       });
 
     let creditAvailableBalanceFormatted = "0";
@@ -507,28 +506,29 @@ export class UsersService {
       ])
       .cursor();
 
-    const bulkWriteDocs: UserFeedBulkWriteDocument[] = [];
+    const validLookupKeys: string[] = [];
 
     for await (const { feedId, lookupKey } of feedIdsToUpdate) {
       if (lookupKey) {
+        validLookupKeys.push(lookupKey);
         logger.debug(`Feed ${feedId} already has a lookup key, skipping`);
         continue;
       }
 
       logger.debug(`Updating lookup key for feed ${feedId}`);
       const newLookupKey = randomUUID();
-      bulkWriteDocs.push({
-        updateOne: {
-          filter: {
-            _id: feedId,
-          },
-          update: {
-            $set: {
-              feedRequestLookupKey: newLookupKey,
-            },
-          },
+      await this.userFeedModel.updateOne(
+        {
+          _id: feedId,
         },
-      });
+        {
+          $set: {
+            feedRequestLookupKey: newLookupKey,
+          },
+        }
+      );
+
+      validLookupKeys.push(newLookupKey);
     }
 
     // Remove lookup keys as necessary
@@ -561,11 +561,6 @@ export class UsersService {
                 },
               },
             },
-            {
-              "externalCredentials.0": {
-                $exists: false,
-              },
-            },
           ],
         },
       },
@@ -592,9 +587,6 @@ export class UsersService {
                 },
               }
             : {}),
-          feedRequestLookupKey: {
-            $exists: true,
-          },
         },
       },
       {
@@ -607,23 +599,16 @@ export class UsersService {
 
     for await (const { feedId } of feedIdsToRemove) {
       logger.info(`Removing lookup key for feed ${feedId}`);
-
-      bulkWriteDocs.push({
-        updateOne: {
-          filter: {
-            _id: feedId,
-          },
-          update: {
-            $unset: {
-              feedRequestLookupKey: "",
-            },
-          },
+      await this.userFeedModel.updateOne(
+        {
+          _id: feedId,
         },
-      });
-    }
-
-    if (bulkWriteDocs.length) {
-      await this.userFeedModel.bulkWrite(bulkWriteDocs);
+        {
+          $unset: {
+            feedRequestLookupKey: "",
+          },
+        }
+      );
     }
   }
 

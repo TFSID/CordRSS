@@ -178,9 +178,6 @@ type FlattenedArticleWithoutId = Omit<Article["flattened"], "id" | "idHash">;
 
 export type XmlParsedArticlesOutput = {
   articles: Article[];
-  feed: {
-    title?: string;
-  };
 };
 
 @Injectable()
@@ -200,7 +197,9 @@ export class ArticleParserService {
     const idResolver = new ArticleIDResolver();
     const rawArticles: FeedParser.Item[] = [];
 
-    const promise = new Promise<XmlParsedArticlesOutput>((resolve, reject) => {
+    const promise = new Promise<{
+      articles: Article[];
+    }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new FeedParseTimeoutException());
       }, options?.timeout || 10000);
@@ -210,7 +209,7 @@ export class ArticleParserService {
           err.message === "Not a feed" ||
           err.message.startsWith("Unexpected end")
         ) {
-          reject(new InvalidFeedException("Invalid feed", xml));
+          reject(new InvalidFeedException("Invalid feed"));
         } else {
           reject(err);
         }
@@ -233,12 +232,7 @@ export class ArticleParserService {
         clearTimeout(timeout);
 
         if (rawArticles.length === 0) {
-          return resolve({
-            articles: [],
-            feed: {
-              title: feedparser.meta?.title,
-            },
-          } as XmlParsedArticlesOutput);
+          return resolve({ articles: [] });
         }
 
         clearTimeout(timeout);
@@ -329,14 +323,11 @@ export class ArticleParserService {
           }
 
           resolve({
-            feed: {
-              title: feedparser.meta?.title,
-            },
             articles: mappedArticles.map((a) => ({
               flattened: a.flattened,
               raw: a.raw,
             })),
-          } as XmlParsedArticlesOutput);
+          });
         } catch (err) {
           reject(err);
         }

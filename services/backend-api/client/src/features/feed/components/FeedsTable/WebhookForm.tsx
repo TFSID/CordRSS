@@ -131,7 +131,6 @@ export const WebhookForm: React.FC<Props> = ({ feedId, serverId, onUpdated }) =>
               control={control}
               render={({ field }) => (
                 <ThemedSelect
-                  isInvalid={false}
                   loading={isLoading}
                   isDisabled={isSubmitting || isLoading}
                   isClearable

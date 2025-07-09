@@ -4,7 +4,10 @@ services:
     extends:
       file: ./docker-compose.base.yml
       service: bot-presence-service
-    image: ghcr.io/synzen/monitorss-bot-presence:main
+    build:
+      context: services/bot-presence
+      dockerfile: Dockerfile
+      target: prod
     command: ["node", "dist/main.js"]
     env_file:
       - ./.env.prod
@@ -13,7 +16,7 @@ services:
     extends:
       file: ./docker-compose.base.yml
       service: feed-requests-redis-cache
-
+  
   rabbitmq-broker:
     extends:
       file: ./docker-compose.base.yml
@@ -23,12 +26,12 @@ services:
     extends:
       file: ./docker-compose.base.yml
       service: mongo
-
+  
   feed-requests-postgres-db:
     extends:
       file: ./docker-compose.base.yml
       service: feed-requests-postgres-db
-
+      
   user-feeds-postgres-db:
     extends:
       file: ./docker-compose.base.yml
@@ -38,18 +41,36 @@ services:
     extends:
       file: ./docker-compose.base.yml
       service: discord-rest-listener-service
-    image: ghcr.io/synzen/monitorss-discord-rest-listener:main
+    build:
+      context: services/discord-rest-listener
+      dockerfile: Dockerfile
+      target: prod
     command: ["node", "build/app.js"]
     env_file:
       - ./.env.prod
-    environment:
-      - NODE_ENV=production
 
   feed-requests-service:
     extends:
       file: ./docker-compose.base.yml
       service: feed-requests-service
-    image: ghcr.io/synzen/monitorss-feed-requests:main
+    build:
+      context: services/feed-requests
+      dockerfile: Dockerfile
+      target: prod
+    command: ["node", "dist/main.js"]
+    env_file:
+      - ./.env.prod
+    environment:
+      - NODE_ENV=production
+
+  feed-requests-api:
+    extends:
+      file: ./docker-compose.base.yml
+      service: feed-requests-api
+    build:
+      context: services/feed-requests
+      dockerfile: Dockerfile
+      target: prod
     command: ["node", "dist/main.js"]
     env_file:
       - ./.env.prod
@@ -60,59 +81,62 @@ services:
     extends:
       file: ./docker-compose.base.yml
       service: feed-requests-postgres-migration
-    image: ghcr.io/synzen/monitorss-feed-requests:main
-    command: "npm run migration:up"
+    build:
+      context: services/feed-requests
+      dockerfile: Dockerfile
+      target: build
+    command: "npm run migration:local:up"
     env_file:
       - ./.env.prod
-    environment:
-      - NODE_ENV=production
 
   user-feeds-service:
     extends:
       file: ./docker-compose.base.yml
       service: user-feeds-service
-    image: ghcr.io/synzen/monitorss-user-feeds:main
+    build:
+      context: services/user-feeds
+      dockerfile: Dockerfile
+      target: prod
     command: ["node", "dist/main.js"]
     env_file:
       - ./.env.prod
-    environment:
-      - NODE_ENV=production
 
   user-feeds-postgres-migration:
     extends:
       file: ./docker-compose.base.yml
       service: user-feeds-postgres-migration
-    image: ghcr.io/synzen/monitorss-user-feeds:main
-    command: "npm run migration:up"
     env_file:
       - ./.env.prod
-    environment:
-      - NODE_ENV=production
 
   legacy-feed-bulk-converter-service:
     extends:
       file: ./docker-compose.base.yml
       service: legacy-feed-bulk-converter-service
-    image: ghcr.io/synzen/monitorss-monolith:main
+    build:
+      context: services/backend-api
+      dockerfile: dockerfiles/legacy-feed-bulk-converter/Dockerfile
+      target: prod
     command: ["node", "dist/scripts/legacy-feed-bulk-converter.js"]
     env_file:
       - ./.env.prod
-    environment:
-      - NODE_ENV=production
 
   schedule-emitter-service:
     extends:
       file: ./docker-compose.base.yml
       service: schedule-emitter-service
-    image: ghcr.io/synzen/monitorss-monolith:main
+    build:
+      context: services/backend-api
+      dockerfile: dockerfiles/schedule-emitter/Dockerfile
+      target: prod
     command: ["node", "dist/scripts/schedule-emitter.js"]
     env_file:
       - ./.env.prod
-    environment:
-      - NODE_ENV=production
 
   monolith:
-    image: ghcr.io/synzen/monitorss-monolith:main
+    build:
+      context: services/backend-api
+      dockerfile: dockerfiles/web/mixed.Dockerfile
+      target: prod
     restart: on-failure:3
     depends_on:
       - mongo
@@ -127,22 +151,21 @@ services:
       - BACKEND_API_PORT=8000
       - BACKEND_API_DEFAULT_MAX_FEEDS=999999
       - BACKEND_API_USER_FEEDS_API_HOST=http://user-feeds-service:5000
-      - BACKEND_API_FEED_REQUESTS_API_HOST=http://feed-requests-service:5000
+      - BACKEND_API_FEED_REQUESTS_API_HOST=http://feed-requests-api:5000
       - BACKEND_API_FEED_USER_AGENT=MonitoRSS
       - BACKEND_API_RABBITMQ_BROKER_URL=amqp://guest:guest@rabbitmq-broker:5672/
       - BACKEND_API_USER_FEEDS_API_KEY=user-feeds-api-key
       - BACKEND_API_FEED_REQUESTS_API_KEY=feed-requests-api-key
       - LOG_LEVEL=info
-      - NODE_ENV=production
     command: ["node", "dist/main.js"]
     networks:
       - monitorss-default
 
+
 volumes:
   mongodb-data:
-  rabbitmq-data:
-  feed-requests-postgres16-data:
-  user-feeds-postgres16-data:
+  feed-requests-postgres-data:
+  user-feeds-postgres-data:
   feed-requests-redis-data:
     driver: local
 

@@ -48,7 +48,6 @@ export const AddSubscriberControls: React.FC<Props> = ({ feedId, roles, loading 
         </VisuallyHidden>
         <Box marginRight="4" marginTop="2">
           <ThemedSelect
-            isInvalid={false}
             id="subscriber-name"
             onChange={(value) => setCurrentRoleId(value)}
             loading={loading}

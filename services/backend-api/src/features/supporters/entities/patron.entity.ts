@@ -1,5 +1,5 @@
 import { ModelDefinition, Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document, Model } from "mongoose";
+import { Document, Types, Model } from "mongoose";
 
 export enum PatronStatus {
   ACTIVE = "active_patron",
@@ -11,7 +11,7 @@ export enum PatronStatus {
   collection: "patrons",
 })
 export class Patron {
-  _id: string;
+  _id: Types.ObjectId;
 
   @Prop({
     enum: Object.values(PatronStatus),

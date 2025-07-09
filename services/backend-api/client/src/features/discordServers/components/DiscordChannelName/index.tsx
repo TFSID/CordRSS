@@ -24,7 +24,7 @@ export const DiscordChannelName: React.FC<Props> = ({
 }) => {
   const { data, status, error } = useDiscordServerChannels({
     serverId,
-    types: [
+    include: [
       GetDiscordChannelType.Forum,
       GetDiscordChannelType.Announcement,
       GetDiscordChannelType.Text,
@@ -56,14 +56,8 @@ export const DiscordChannelName: React.FC<Props> = ({
 
   if (error) {
     return (
-      <Tooltip
-        placement="bottom-start"
-        label={`Unable to get channel name (${error?.message})`}
-        display="inline"
-      >
-        <Text color="orange.500" display="inline">
-          ID: {channelId}
-        </Text>
+      <Tooltip placement="bottom-start" label={`Unable to get channel name (${error?.message})`}>
+        <Text color="orange.500">{channelId}</Text>
       </Tooltip>
     );
   }

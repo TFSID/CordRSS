@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { ArticleFiltersService } from "../article-filters/article-filters.service";
 import { ArticleRateLimitService } from "../article-rate-limit/article-rate-limit.service";
 import { CacheStorageService } from "../cache-storage/cache-storage.service";
@@ -10,7 +11,6 @@ import {
   MediumPayload,
 } from "../shared";
 import { RegexEvalException } from "../shared/exceptions";
-import { generateDeliveryId } from "../shared/utils/generate-delivery-id";
 import logger from "../shared/utils/logger";
 import { DeliveryMedium } from "./mediums/delivery-medium.interface";
 import { DiscordMediumService } from "./mediums/discord-medium.service";
@@ -100,7 +100,8 @@ export class DeliveryService {
         event,
         article,
         medium,
-        limitState
+        limitState,
+        randomUUID()
       );
 
       results.push(...articleStates);
@@ -113,20 +114,20 @@ export class DeliveryService {
     event: FeedV2Event,
     article: Article,
     medium: MediumPayload,
-    limitState: LimitState
+    limitState: LimitState,
+    deliveryId: string
   ): Promise<ArticleDeliveryState[]> {
     try {
       if (limitState.remaining <= 0 || limitState.remainingInMedium <= 0) {
         return [
           {
-            id: generateDeliveryId(),
+            id: deliveryId,
             mediumId: medium.id,
             status:
               limitState.remaining <= 0
                 ? ArticleDeliveryStatus.RateLimited
                 : ArticleDeliveryStatus.MediumRateLimitedByUser,
             articleIdHash: article.flattened.idHash,
-            article,
           },
         ];
       }
@@ -152,7 +153,7 @@ export class DeliveryService {
         if (!result) {
           return [
             {
-              id: generateDeliveryId(),
+              id: deliveryId,
               mediumId: medium.id,
               status: ArticleDeliveryStatus.FilteredOut,
               articleIdHash: article.flattened.idHash,
@@ -161,15 +162,33 @@ export class DeliveryService {
                     explainBlocked,
                   })
                 : null,
-              article,
             },
           ];
         }
       }
 
+      const cacheKey = `delivery:${event.data.feed.id}:${medium.id}:${article.flattened.idHash}`;
+
+      const oldVal = await this.cacheStorageService.set({
+        key: cacheKey,
+        getOldValue: true,
+        expSeconds: 60 * 3,
+        body: "1",
+      });
+
+      if (oldVal) {
+        logger.warn(
+          `Article already delivered to feed ${event.data.feed.id}, medium ${medium.id},` +
+            ` article ${formattedArticle.flattened.id}`
+        );
+
+        return [];
+      }
+
       const articleStates = await mediumService.deliverArticle(
         formattedArticle,
         {
+          deliveryId,
           mediumId: medium.id,
           deliverySettings: medium.details,
           feedDetails: event.data.feed,
@@ -185,7 +204,7 @@ export class DeliveryService {
       if (err instanceof RegexEvalException) {
         return [
           {
-            id: generateDeliveryId(),
+            id: deliveryId,
             mediumId: medium.id,
             status: ArticleDeliveryStatus.Rejected,
             articleIdHash: article.flattened.idHash,
@@ -194,7 +213,6 @@ export class DeliveryService {
             externalDetail: JSON.stringify({
               message: (err as Error).message,
             }),
-            article,
           },
         ];
       }
@@ -211,13 +229,12 @@ export class DeliveryService {
 
       return [
         {
-          id: generateDeliveryId(),
+          id: deliveryId,
           mediumId: medium.id,
           status: ArticleDeliveryStatus.Failed,
           errorCode: ArticleDeliveryErrorCode.Internal,
           internalMessage: (err as Error).message,
           articleIdHash: article.flattened.idHash,
-          article,
         },
       ];
     }

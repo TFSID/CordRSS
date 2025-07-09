@@ -235,7 +235,7 @@ export class SupporterSubscriptionsController {
 
     const { id } =
       await this.supporterSubscriptionsService.getUpdatePaymentMethodTransaction(
-        { discordUserId }
+        { email }
       );
 
     return {
@@ -264,7 +264,7 @@ export class SupporterSubscriptionsController {
 
     const preview =
       await this.supporterSubscriptionsService.previewSubscriptionChange({
-        discordUserId,
+        email,
         items: [
           {
             priceId: priceId,
@@ -297,7 +297,7 @@ export class SupporterSubscriptionsController {
     }
 
     await this.supporterSubscriptionsService.changeSubscription({
-      discordUserId,
+      email,
       items: [
         {
           priceId: priceId,
@@ -324,7 +324,7 @@ export class SupporterSubscriptionsController {
     }
 
     await this.supporterSubscriptionsService.cancelSubscription({
-      discordUserId,
+      email,
     });
   }
 
@@ -345,7 +345,7 @@ export class SupporterSubscriptionsController {
     }
 
     await this.supporterSubscriptionsService.resumeSubscription({
-      discordUserId,
+      email,
     });
   }
 }

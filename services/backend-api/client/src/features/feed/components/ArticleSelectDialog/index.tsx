@@ -24,7 +24,6 @@ import {
   Text,
   useDisclosure,
   chakra,
-  FormHelperText,
 } from "@chakra-ui/react";
 import React, { ReactElement, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -135,13 +134,7 @@ export const ArticleSelectDialog = ({
   return (
     <>
       {React.cloneElement(trigger, {
-        onClick: () => {
-          if (trigger.props["aria-disabled"]) {
-            return;
-          }
-
-          onOpen();
-        },
+        onClick: onOpen,
       })}
       <Modal isOpen={isOpen} onClose={onClose} size="xl">
         <ModalOverlay />
@@ -149,27 +142,10 @@ export const ArticleSelectDialog = ({
           <ModalHeader>{t("features.userFeeds.components.articleSelectPrompt.title")}</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            <Box aria-live="polite" srOnly>
-              {userFeedArticlesStatus === "loading" && (
-                <span>
-                  Loading articles ${skip + 1} through ${skip + limit}
-                </span>
-              )}
-              {userFeedArticlesStatus === "success" && (
-                <span>
-                  Finished loading articles ${skip + 1} through ${Math.max(skip + limit)}
-                </span>
-              )}
-              {userFeedArticlesStatus === "success" && fetchStatus === "fetching" && (
-                <span>
-                  Loading articles ${skip + 1} through ${skip + limit}
-                </span>
-              )}
-            </Box>
             <Stack spacing={4}>
               <Box>
                 {userFeedArticlesStatus === "loading" && (
-                  <Stack aria-hidden>
+                  <Stack>
                     <Center>
                       <Loading />
                     </Center>
@@ -186,19 +162,9 @@ export const ArticleSelectDialog = ({
                     <Flex>
                       <HStack alignItems="center" flexGrow={1} flexWrap="wrap">
                         <FormControl flexGrow={1}>
-                          <FormLabel
-                            id="article-select-dialog-property-label"
-                            htmlFor="article-select-dialog-property-select"
-                          >
-                            Article Property
-                          </FormLabel>
+                          <FormLabel>Property</FormLabel>
                           {/* {!singleProperty && ( */}
                           <ThemedSelect
-                            isInvalid={false}
-                            selectProps={{
-                              inputId: "article-select-dialog-property-select",
-                              "aria-labelledby": "article-select-dialog-property-label",
-                            }}
                             options={
                               feedArticlePropertiesResult?.result.properties.map((property) => ({
                                 value: property,
@@ -213,9 +179,6 @@ export const ArticleSelectDialog = ({
                             value={useArticleProperty}
                             onChange={onChangeFeedArticleProperty}
                           />
-                          <FormHelperText>
-                            The article property to display for each article for selection.
-                          </FormHelperText>
                         </FormControl>
                       </HStack>
                     </Flex>
@@ -229,28 +192,17 @@ export const ArticleSelectDialog = ({
                             </InputLeftElement>
                             <Input
                               onChange={(e) => setSearch(e.target.value)}
-                              placeholder="Search through article property values"
+                              placeholder="Search..."
                               bg="gray.800"
                             />
                           </InputGroup>
                           <Button
-                            leftIcon={fetchStatus === "fetching" ? undefined : <RepeatIcon />}
-                            onClick={() => {
-                              if (fetchStatus === "fetching") {
-                                return;
-                              }
-
-                              refetch();
-                            }}
-                            aria-label="Refresh list of articles"
+                            leftIcon={<RepeatIcon />}
+                            isLoading={fetchStatus === "fetching"}
+                            onClick={() => refetch()}
+                            aria-label="Reload articles"
                           >
-                            <span>
-                              {fetchStatus === "fetching" ? (
-                                <Spinner size="sm" />
-                              ) : (
-                                "Refresh Articles"
-                              )}
-                            </span>
+                            <span>Reload</span>
                           </Button>
                         </HStack>
                       </FormControl>
@@ -302,6 +254,7 @@ export const ArticleSelectDialog = ({
                             })}
                             boxProps={{
                               background: "transparent",
+                              // border: `solid 2px ${getChakraColor("gray.600")}`,
                             }}
                             onSelectedValue={onClickArticle}
                             shown
@@ -321,30 +274,22 @@ export const ArticleSelectDialog = ({
                         <Button
                           width="min-content"
                           size="sm"
-                          onClick={() => {
-                            if (onFirstPage || fetchStatus === "fetching") {
-                              return;
-                            }
-
-                            prevPage();
-                          }}
-                          aria-disabled={onFirstPage || fetchStatus === "fetching"}
+                          onClick={prevPage}
+                          isDisabled={onFirstPage || fetchStatus === "fetching"}
                         >
-                          <span>Previous Page</span>
+                          <span>
+                            {t("features.feedConnections.components.filtersTabSection.prevPage")}
+                          </span>
                         </Button>
                         <Button
                           size="sm"
                           width="min-content"
-                          onClick={() => {
-                            if (onLastPage || fetchStatus === "fetching") {
-                              return;
-                            }
-
-                            nextPage();
-                          }}
-                          aria-disabled={onLastPage || fetchStatus === "fetching"}
+                          onClick={nextPage}
+                          isDisabled={onLastPage || fetchStatus === "fetching"}
                         >
-                          <span>Next Page</span>
+                          <span>
+                            {t("features.feedConnections.components.filtersTabSection.nextPage")}
+                          </span>
                         </Button>
                       </HStack>
                     </Flex>
@@ -353,7 +298,7 @@ export const ArticleSelectDialog = ({
               </Box>
               {!alertComponent && (
                 <>
-                  <Alert borderRadius="md" role={undefined}>
+                  <Alert borderRadius="md">
                     <AlertDescription>
                       <Text fontSize="sm">
                         {t("features.userFeeds.components.articleSelectPrompt.mayBeDelayWarning")}

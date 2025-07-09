@@ -19,7 +19,6 @@ export enum ApiErrorCode {
   WEBHOOKS_MANAGE_MISSING_PERMISSIONS = "WEBHOOKS_MANAGE_MISSING_PERMISSIONS",
   WEBHOOK_INVALID = "WEBHOOK_INVALID",
   FEED_MISSING_CHANNEL_PERMISSION = "FEED_MISSING_CHANNEL_PERMISSION",
-  FEED_MISSING_VIEW_CHANNEL_PERMISSION = "FEED_MISSING_VIEW_CHANNEL_PERMISSION",
   FEED_MISSING_CHANNEL = "FEED_MISSING_CHANNEL",
   FEED_USER_MISSING_MANAGE_GUILD = "FEED_USER_MISSING_MANAGE_GUILD",
   FEED_LIMIT_REACHED = "FEED_LIMIT_REACHED",
@@ -43,7 +42,6 @@ export enum ApiErrorCode {
   INVALID_CUSTOM_PLACEHOLDERS_REGEX_PREVIEW_INPUT = "INVALID_CUSTOM_PLACEHOLDERS_REGEX_PREVIEW_INPUT",
   INVALID_FILTERS_REGEX = "INVALID_FILTERS_REGEX",
   FEED_INVALID_SSL_CERT = "FEED_INVALID_SSL_CERT",
-  ADD_FEED_WITH_SOURCE_FEED_NOT_FOUND = "ADD_FEED_WITH_SOURCE_FEED_NOT_FOUND",
 }
 
 const ERROR_CODE_MESSAGES: Record<ApiErrorCode, string> = {
@@ -65,8 +63,6 @@ const ERROR_CODE_MESSAGES: Record<ApiErrorCode, string> = {
   WEBHOOK_INVALID: t("common.apiErrors.webhookInvalid"),
   BANNED_FEED: t("common.apiErrors.bannedFeed"),
   FEED_MISSING_CHANNEL_PERMISSION: t("common.apiErrors.feedMissingChannelPermission"),
-  FEED_MISSING_VIEW_CHANNEL_PERMISSION:
-    'The bot does not have permission to view the channel. Ensure that the bot has the channel-level "View Channel" permission and try again.',
   FEED_LIMIT_REACHED: t("common.apiErrors.feedLimitReached"),
   FEED_MISSING_CHANNEL: t("common.apiErrors.feedMissingChannel"),
   FEED_USER_MISSING_MANAGE_GUILD: t("common.apiErrors.feedUserMissingManageGuild"),
@@ -95,17 +91,13 @@ const ERROR_CODE_MESSAGES: Record<ApiErrorCode, string> = {
   INVALID_FILTERS_REGEX: "Invalid regex for filters",
   FEED_INVALID_SSL_CERT:
     "Feed host has invalid SSL certificate. Please contact the feed site for them to correct their certificate.",
-  ADD_FEED_WITH_SOURCE_FEED_NOT_FOUND:
-    "Source feed to copy settings from was not found. Ensure the source feed exists and you have permission to view it.",
 };
 
 export const getStandardErrorCodeMessage = (code: ApiErrorCode) => {
   const mappedError = ERROR_CODE_MESSAGES[code];
 
   if (!mappedError) {
-    return `${t(
-      "common.errors.somethingWentWrong"
-    )} Please try again later, or contact support if the issue persists.`;
+    return t("common.errors.somethingWentWrong");
   }
 
   return mappedError;

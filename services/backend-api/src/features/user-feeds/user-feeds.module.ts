@@ -7,12 +7,9 @@ import { SupportersModule } from "../supporters/supporters.module";
 import { DiscordWebhooksModule } from "../discord-webhooks/discord-webhooks.module";
 import { DiscordApiModule } from "../../services/apis/discord/discord-api.module";
 import { UserFeedFeature } from "./entities";
-import { UserFeedTagFeature } from "./entities/user-feed-tag.entity";
 import { UserFeedsService } from "./user-feeds.service";
-import { UserFeedTagsService } from "./user-feed-tags.service";
 import { FeedsModule } from "../feeds/feeds.module";
 import { UserFeedsController } from "./user-feeds.controller";
-import { UserFeedTagsController } from "./user-feed-tags.controller";
 import { FeedHandlerModule } from "../../services/feed-handler/feed-fetcher.module";
 import { MessageBrokerModule } from "../message-broker/message-broker.module";
 import { AmqpConnection } from "@golevelup/nestjs-rabbitmq";
@@ -24,13 +21,12 @@ import { UserFeature } from "../users/entities/user.entity";
 import { UsersModule } from "../users/users.module";
 
 @Module({
-  controllers: [UserFeedsController, UserFeedTagsController],
-  providers: [UserFeedsService, UserFeedTagsService],
+  controllers: [UserFeedsController],
+  providers: [UserFeedsService],
   imports: [
     DiscordAuthModule,
     MongooseModule.forFeature([
       UserFeedFeature,
-      UserFeedTagFeature,
       FeedFeature,
       UserFeedLimitOverrideFeature,
       LegacyFeedConversionJobFeature,
@@ -43,17 +39,21 @@ import { UsersModule } from "../users/users.module";
     FeedsModule,
     SupportersModule,
     FeedHandlerModule,
-    UsersModule,
-    MessageBrokerModule.forRoot(),
-    FeedConnectionsDiscordChannelsModule,
   ],
-  exports: [
-    UserFeedsService,
-    UserFeedTagsService,
-    MongooseModule.forFeature([UserFeedFeature, UserFeedTagFeature]),
-  ],
+  exports: [UserFeedsService, MongooseModule.forFeature([UserFeedFeature])],
 })
 export class UserFeedsModule {
+  static forRoot(): DynamicModule {
+    return {
+      module: UserFeedsModule,
+      imports: [
+        UsersModule.forRoot(),
+        MessageBrokerModule.forRoot(),
+        FeedConnectionsDiscordChannelsModule.forRoot(),
+      ],
+    };
+  }
+
   static forTest(): DynamicModule {
     return {
       module: UserFeedsModule,

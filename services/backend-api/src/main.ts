@@ -215,11 +215,9 @@ async function bootstrap() {
 
   const port = config.getOrThrow("BACKEND_API_PORT");
 
-  logger.info(`Attempting to listen on port ${port}`);
+  logger.info(`NestJS is listening on port ${port}`);
 
   await app.listen(port, "0.0.0.0");
-
-  logger.info(`NestJS is listening on port ${port}`);
 }
 
 bootstrap();

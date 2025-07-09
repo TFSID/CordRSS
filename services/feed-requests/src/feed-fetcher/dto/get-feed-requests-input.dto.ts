@@ -27,12 +27,4 @@ export class GetFeedRequestsInputDto {
   @IsString()
   @IsOptional()
   lookupKey?: string;
-
-  @IsString()
-  @IsOptional()
-  afterDate?: string;
-
-  @IsString()
-  @IsOptional()
-  beforeDate?: string;
 }

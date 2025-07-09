@@ -1,11 +1,4 @@
-import {
-  IsArray,
-  IsIn,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-} from "class-validator";
-import { UserFeedTargetFeedSelectionType } from "../../user-feeds/constants/target-feed-selection-type.type";
+import { IsNotEmpty, IsOptional, IsString } from "class-validator";
 
 export class CreateDiscordChannelConnectionCloneInputDto {
   @IsString()
@@ -15,17 +8,4 @@ export class CreateDiscordChannelConnectionCloneInputDto {
   @IsString()
   @IsOptional()
   channelId?: string;
-
-  @IsString({ each: true })
-  @IsArray()
-  @IsOptional()
-  targetFeedIds?: string[];
-
-  @IsIn(Object.values(UserFeedTargetFeedSelectionType))
-  @IsOptional()
-  targetFeedSelectionType?: UserFeedTargetFeedSelectionType;
-
-  @IsString()
-  @IsOptional()
-  targetFeedSearch?: string;
 }

@@ -51,8 +51,6 @@ export interface SendTestDiscordChannelArticleInput {
         appendChar?: string | null;
         prependChar?: string | null;
       };
-      channelNewThreadTitle?: DiscordChannelConnection["details"]["channelNewThreadTitle"];
-      channelNewThreadExcludesPreview?: DiscordChannelConnection["details"]["channelNewThreadExcludesPreview"];
       forumThreadTitle?: DiscordChannelConnection["details"]["forumThreadTitle"];
       forumThreadTags?: DiscordChannelConnection["details"]["forumThreadTags"];
       mentions?: DiscordChannelConnection["mentions"];

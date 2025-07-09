@@ -96,23 +96,14 @@ export class MessageBrokerEventsService {
     createQueueIfNotExists: true,
   })
   async handleUrlFetchCompletedEvent({
-    data: { url, lookupKey, rateSeconds, debug },
+    data: { url, lookupKey, rateSeconds },
   }: {
     data: {
       url: string;
       lookupKey?: string;
       rateSeconds: number;
-      debug?: boolean;
     };
   }) {
-    if (debug) {
-      logger.info(`DEBUG ${lookupKey || url}: In url fetch completed`, {
-        url,
-        lookupKey,
-        rateSeconds,
-      });
-    }
-
     logger.debug("Got url fetched event", { lookupKey, url, rateSeconds });
     const healthStatusUpdateCount = await this.userFeedModel.countDocuments({
       ...(lookupKey ? { feedRequestLookupKey: lookupKey } : { url }),
@@ -143,13 +134,11 @@ export class MessageBrokerEventsService {
       feedCursor = this.getFeedsQueryWithLookupKeysMatchingRefreshRate({
         feedRequestLookupKey: lookupKey,
         refreshRateSeconds: rateSeconds,
-        debug,
       }).cursor();
     } else {
       feedCursor = this.getFeedsQueryMatchingRefreshRate({
         url,
         refreshRateSeconds: rateSeconds,
-        debug,
       }).cursor();
     }
 
@@ -487,9 +476,6 @@ export class MessageBrokerEventsService {
           : null,
         rateLimits: con.rateLimits,
         details: {
-          channelNewThreadTitle: con.details.channelNewThreadTitle,
-          channelNewThreadExcludesPreview:
-            con.details.channelNewThreadExcludesPreview,
           guildId: con.details.channel?.guildId || con.details.webhook!.guildId,
           channel: con.details.channel
             ? {
@@ -534,7 +520,46 @@ export class MessageBrokerEventsService {
         },
       }));
 
-    const allMediums = discordChannelMediums;
+    const discordWebhookMediums = userFeed.connections.discordWebhooks
+      .filter((c) => !c.disabledCode)
+      .map<DiscordMediumEvent>((con) => ({
+        id: con.id.toHexString(),
+        key: "discord",
+        filters: con.filters?.expression
+          ? { expression: con.filters.expression }
+          : null,
+        rateLimits: con.rateLimits,
+        details: {
+          guildId: con.details.webhook.guildId,
+          webhook: {
+            id: con.details.webhook.id,
+            token: con.details.webhook.token,
+            name: con.details.webhook.name,
+            iconUrl: con.details.webhook.iconUrl,
+            type: con.details.webhook.type,
+          },
+          content: castDiscordContentForMedium(con.details.content),
+          embeds: castDiscordEmbedsForMedium(con.details.embeds),
+          forumThreadTitle: con.details.forumThreadTitle,
+          formatter: {
+            formatTables: con.details.formatter?.formatTables,
+            stripImages: con.details.formatter?.stripImages,
+            disableImageLinkPreviews:
+              con.details.formatter?.disableImageLinkPreviews,
+          },
+          splitOptions: con.splitOptions?.isEnabled
+            ? con.splitOptions
+            : undefined,
+          mentions: con.mentions,
+          customPlaceholders: parseCustomPlaceholders
+            ? con.customPlaceholders
+            : [],
+          placeholderLimits: con.details.placeholderLimits,
+          enablePlaceholderFallback: con.details.enablePlaceholderFallback,
+        },
+      }));
+
+    const allMediums = discordChannelMediums.concat(discordWebhookMediums);
     const requestLookupDetails = getFeedRequestLookupDetails({
       feed: userFeed,
       user: {
@@ -599,34 +624,14 @@ export class MessageBrokerEventsService {
   getFeedsQueryMatchingRefreshRate(data: {
     refreshRateSeconds: number;
     url: string;
-    debug?: boolean;
   }): Aggregate<(UserFeedDocument & { users: UserDocument[] })[]> {
-    const pipeline = getCommonFeedAggregateStages(data);
-
-    if (data.debug) {
-      logger.info(
-        `DEBUG ${data.url}: Looking for feeds with MongoDB aggregate pipeline`,
-        { pipeline, ...data }
-      );
-    }
-
-    return this.userFeedModel.aggregate(pipeline);
+    return this.userFeedModel.aggregate(getCommonFeedAggregateStages(data));
   }
 
   getFeedsQueryWithLookupKeysMatchingRefreshRate(data: {
     refreshRateSeconds: number;
     feedRequestLookupKey: string;
-    debug?: boolean;
   }): Aggregate<(UserFeedDocument & { users: UserDocument[] })[]> {
-    const pipeline = getCommonFeedAggregateStages(data);
-
-    if (data.debug) {
-      logger.info(
-        `DEBUG ${data.feedRequestLookupKey}: Looking for feeds via lookup key with MongoDB aggregate pipeline`,
-        { pipeline, ...data }
-      );
-    }
-
-    return this.userFeedModel.aggregate(pipeline);
+    return this.userFeedModel.aggregate(getCommonFeedAggregateStages(data));
   }
 }

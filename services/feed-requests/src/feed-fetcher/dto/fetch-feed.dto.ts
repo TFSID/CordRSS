@@ -57,11 +57,6 @@ export class FetchFeedDto {
   @IsBoolean()
   @IsOptional()
   @Type(() => Boolean)
-  executeFetchIfStale?: boolean;
-
-  @IsBoolean()
-  @IsOptional()
-  @Type(() => Boolean)
   executeFetchIfNotExists?: boolean;
 
   @IsString()

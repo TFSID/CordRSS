@@ -93,13 +93,6 @@ class Channel {
     required: true,
   })
   guildId: string;
-
-  // If the channel is a thread, this is the ID of the parent channel. Otherwise it is undefined.
-  @Prop({
-    required: false,
-    type: String,
-  })
-  parentChannelId?: string | null;
 }
 
 const ChannelSchema = SchemaFactory.createForClass(Channel);
@@ -193,16 +186,6 @@ class Details {
     required: false,
   })
   channel?: Channel;
-
-  @Prop({
-    required: false,
-  })
-  channelNewThreadTitle?: string;
-
-  @Prop({
-    required: false,
-  })
-  channelNewThreadExcludesPreview?: boolean;
 
   @Prop({
     type: DiscordWebhookSchema,

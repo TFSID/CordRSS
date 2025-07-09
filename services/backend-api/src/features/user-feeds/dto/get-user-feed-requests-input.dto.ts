@@ -10,6 +10,7 @@ export class GetUserFeedRequestsInputDto {
   limit = 25;
 
   @IsInt()
+  @Max(1000)
   @Min(0)
   @Type(() => Number)
   @IsOptional()

@@ -7,13 +7,17 @@ import { UsersModule } from "../users/users.module";
 
 @Module({
   providers: [ScheduleHandlerService],
-  imports: [SupportersModule, UsersModule, UserFeedsModule],
+  imports: [SupportersModule],
 })
 export class ScheduleHandlerModule {
   static forRoot(): DynamicModule {
     return {
       module: ScheduleHandlerModule,
-      imports: [MessageBrokerModule.forRoot()],
+      imports: [
+        MessageBrokerModule.forRoot(),
+        UsersModule.forRoot(),
+        UserFeedsModule.forRoot(),
+      ],
     };
   }
 }

@@ -18,10 +18,10 @@ export class MessageBrokerModule implements OnApplicationShutdown {
     return {
       module: MessageBrokerModule,
       imports: [
-        RabbitMQModule.forRoot({
+        RabbitMQModule.forRoot(RabbitMQModule, {
           uri: configValues.USER_FEEDS_RABBITMQ_BROKER_URL,
           defaultExchangeType: "direct",
-          defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.ACK,
+          defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.NACK,
           connectionInitOptions: {
             wait: false,
           },

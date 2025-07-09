@@ -34,27 +34,20 @@ import { UserFeedComputedStatus } from "./constants/user-feed-computed-status.ty
 import { GetUserFeedsInputDto, GetUserFeedsInputSortKey } from "./dto";
 import { UserFeed, UserFeedFeature, UserFeedModel } from "./entities";
 import { FeedNotFailedException } from "./exceptions/feed-not-failed.exception";
-import { UserFeedDisabledCode, UserFeedHealthStatus } from "./types";
-import { UserFeedsService } from "./user-feeds.service";
-import { User, UserFeature, UserModel } from "../users/entities/user.entity";
-import { FeedConnectionsDiscordChannelsService } from "../feed-connections/feed-connections-discord-channels.service";
-import { UsersService } from "../users/users.service";
 import {
-  UserFeedTag,
-  UserFeedTagFeature,
-  UserFeedTagModel,
-} from "./entities/user-feed-tag.entity";
+  GetFeedArticlesInput,
+  UserFeedDisabledCode,
+  UserFeedHealthStatus,
+} from "./types";
+import { UserFeedsService } from "./user-feeds.service";
+import { UserFeature } from "../users/entities/user.entity";
+import { FeedConnectionsDiscordChannelsService } from "../feed-connections/feed-connections-discord-channels.service";
 
-const createMockDiscordChannelConnection: (
-  overrideDetails?: Omit<Partial<DiscordChannelConnection>, "details"> & {
-    details: Partial<DiscordChannelConnection["details"]>;
-  }
-) => DiscordChannelConnection = (overrideDetails) => ({
+const mockDiscordChannelConnection: DiscordChannelConnection = {
   id: new Types.ObjectId(),
   name: "name",
   createdAt: new Date(),
   updatedAt: new Date(),
-  ...overrideDetails,
   details: {
     channel: {
       id: "1",
@@ -62,9 +55,8 @@ const createMockDiscordChannelConnection: (
     },
     embeds: [],
     formatter: {},
-    ...overrideDetails?.details,
   },
-});
+};
 
 const mockDiscordWebhookConnection: DiscordWebhookConnection = {
   id: new Types.ObjectId(),
@@ -85,8 +77,6 @@ const mockDiscordWebhookConnection: DiscordWebhookConnection = {
 describe("UserFeedsService", () => {
   let service: UserFeedsService;
   let userFeedModel: UserFeedModel;
-  let userModel: UserModel;
-  let userFeedTagModel: UserFeedTagModel;
   let userFeedLimitOverrideModel: UserFeedLimitOverrideModel;
   let feedFetcherService: FeedFetcherService;
   let feedsService: FeedsService;
@@ -96,7 +86,6 @@ describe("UserFeedsService", () => {
     getBenefitsOfDiscordUser: jest.fn(),
     defaultMaxUserFeeds: 2,
   };
-  const usersService = {};
 
   beforeAll(async () => {
     const { uncompiledModule, init } = await setupIntegrationTests({
@@ -125,16 +114,11 @@ describe("UserFeedsService", () => {
             cloneConnection: jest.fn(),
           },
         },
-        {
-          provide: UsersService,
-          useValue: usersService,
-        },
       ],
       imports: [
         MongooseTestModule.forRoot(),
         MongooseModule.forFeature([
           FeedFeature,
-          UserFeedTagFeature,
           LegacyFeedConversionJobFeature,
           UserFeedFeature,
           UserFeedLimitOverrideFeature,
@@ -166,10 +150,6 @@ describe("UserFeedsService", () => {
 
     service = module.get<UserFeedsService>(UserFeedsService);
     userFeedModel = module.get<UserFeedModel>(getModelToken(UserFeed.name));
-    userFeedTagModel = module.get<UserFeedTagModel>(
-      getModelToken(UserFeedTag.name)
-    );
-    userModel = module.get<UserModel>(getModelToken(User.name));
     userFeedLimitOverrideModel = module.get<UserFeedLimitOverrideModel>(
       getModelToken(UserFeedLimitOverride.name)
     );
@@ -217,7 +197,6 @@ describe("UserFeedsService", () => {
         service.addFeed(
           {
             discordUserId: "123",
-            userAccessToken: "",
           },
           {
             title: "title",
@@ -235,7 +214,6 @@ describe("UserFeedsService", () => {
         service.addFeed(
           {
             discordUserId: "123",
-            userAccessToken: "",
           },
           {
             title: "title",
@@ -262,7 +240,6 @@ describe("UserFeedsService", () => {
         service.addFeed(
           {
             discordUserId,
-            userAccessToken: "",
           },
           {
             title: "title",
@@ -284,7 +261,6 @@ describe("UserFeedsService", () => {
       const entity = await service.addFeed(
         {
           discordUserId,
-          userAccessToken: "",
         },
         createDetails
       );
@@ -809,7 +785,7 @@ describe("UserFeedsService", () => {
           connections: {
             discordChannels: [
               {
-                ...createMockDiscordChannelConnection(),
+                ...mockDiscordChannelConnection,
                 disabledCode: FeedConnectionDisabledCode.MissingMedium,
               },
             ],
@@ -830,11 +806,7 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        dto
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, dto);
 
       expect(result).toHaveLength(5);
       expect(result).toEqual(
@@ -887,14 +859,10 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          search: "2 here",
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        search: "2 here",
+      });
 
       expect(result).toHaveLength(1);
       expect(result).toMatchObject([
@@ -902,6 +870,7 @@ describe("UserFeedsService", () => {
           _id: feed3._id,
           title: feed3.title,
           url: feed3.url,
+          user,
         },
       ]);
     });
@@ -930,14 +899,10 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          search: "here",
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        search: "here",
+      });
 
       expect(result).toHaveLength(1);
       expect(result).toMatchObject([
@@ -945,6 +910,7 @@ describe("UserFeedsService", () => {
           _id: feed2._id,
           title: feed2.title,
           url: feed2.url,
+          user,
         },
       ]);
     });
@@ -974,16 +940,12 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          filters: {
-            disabledCodes: [UserFeedDisabledCode.Manual],
-          },
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        filters: {
+          disabledCodes: [UserFeedDisabledCode.Manual],
+        },
+      });
 
       expect(result).toHaveLength(1);
       expect(result).toMatchObject([
@@ -991,6 +953,7 @@ describe("UserFeedsService", () => {
           _id: feed2._id,
           title: feed2.title,
           url: feed2.url,
+          user,
         },
       ]);
     });
@@ -999,69 +962,49 @@ describe("UserFeedsService", () => {
       const user = {
         discordUserId: "123",
       };
+      const [feed1Id, feed2Id, feed3Id, feed4Id] = [
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+      ];
 
-      const [feed1, feed2, feed3, feed4] = await userFeedModel.create([
+      await userFeedModel.collection.insertMany([
         {
+          _id: feed1Id,
           title: "title1",
           url: "url1",
           user,
+          createdAt: new Date(2020),
         },
         {
+          _id: feed2Id,
           title: "title2",
           url: "url2",
           user,
+          createdAt: new Date(2021),
         },
         {
+          _id: feed3Id,
           title: "title3",
           url: "url3",
           user,
+          createdAt: new Date(2022),
         },
         {
+          _id: feed4Id,
           title: "title4",
           url: "url4",
           user,
+          createdAt: new Date(2023),
         },
       ]);
-      const feed1Id = feed1._id;
-      const feed2Id = feed2._id;
-      const feed3Id = feed3._id;
-      const feed4Id = feed4._id;
 
-      await userFeedModel.collection.bulkWrite([
-        {
-          updateOne: {
-            filter: { _id: feed1Id },
-            update: { $set: { createdAt: dayjs("2020-01-01").toDate() } },
-          },
-        },
-        {
-          updateOne: {
-            filter: { _id: feed2Id },
-            update: { $set: { createdAt: dayjs("2021-01-01").toDate() } },
-          },
-        },
-        {
-          updateOne: {
-            filter: { _id: feed3Id },
-            update: { $set: { createdAt: dayjs("2022-01-01").toDate() } },
-          },
-        },
-        {
-          updateOne: {
-            filter: { _id: feed4Id },
-            update: { $set: { createdAt: dayjs("2023-01-01").toDate() } },
-          },
-        },
-      ]);
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          limit: 1,
-          offset: 1,
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        limit: 1,
+        offset: 1,
+      });
 
       expect(result).toHaveLength(1);
       expect(result).toMatchObject([
@@ -1069,6 +1012,7 @@ describe("UserFeedsService", () => {
           _id: feed3Id,
           title: "title3",
           url: "url3",
+          user,
         },
       ]);
     });
@@ -1077,59 +1021,38 @@ describe("UserFeedsService", () => {
       const user = {
         discordUserId: "123",
       };
+      const [feed1Id, feed2Id, feed3Id] = [
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+      ];
 
-      const [feed1, feed2, feed3] = await userFeedModel.create([
+      await userFeedModel.collection.insertMany([
         {
+          _id: feed1Id,
           title: "title1",
           url: "url1",
           user,
+          createdAt: new Date(2020),
         },
         {
+          _id: feed2Id,
           title: "title2",
           url: "url2",
           user,
+          createdAt: new Date(2021),
         },
         {
+          _id: feed3Id,
           title: "title3",
           url: "url3",
           user,
+          createdAt: new Date(2022),
         },
       ]);
 
-      const feed1Id = feed1._id;
-      const feed2Id = feed2._id;
-      const feed3Id = feed3._id;
-
-      await userFeedModel.collection.bulkWrite([
-        {
-          updateOne: {
-            filter: { _id: feed1Id },
-            update: {
-              $set: {
-                createdAt: dayjs("2020-01-01").toDate(),
-              },
-            },
-          },
-        },
-        {
-          updateOne: {
-            filter: { _id: feed2Id },
-            update: { $set: { createdAt: dayjs("2021-01-01").toDate() } },
-          },
-        },
-        {
-          updateOne: {
-            filter: { _id: feed3Id },
-            update: { $set: { createdAt: dayjs("2022-01-01").toDate() } },
-          },
-        },
-      ]);
-
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        dto
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, dto);
 
       expect(result).toHaveLength(3);
       expect(result).toMatchObject([
@@ -1137,16 +1060,19 @@ describe("UserFeedsService", () => {
           _id: feed3Id,
           title: "title3",
           url: "url3",
+          user,
         },
         {
           _id: feed2Id,
           title: "title2",
           url: "url2",
+          user,
         },
         {
           _id: feed1Id,
           title: "title1",
           url: "url1",
+          user,
         },
       ]);
     });
@@ -1175,7 +1101,7 @@ describe("UserFeedsService", () => {
           connections: {
             discordChannels: [
               {
-                ...createMockDiscordChannelConnection(),
+                ...mockDiscordChannelConnection,
                 disabledCode: FeedConnectionDisabledCode.MissingMedium,
               },
             ],
@@ -1189,27 +1115,19 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          filters: {
-            computedStatuses: [UserFeedComputedStatus.RequiresAttention],
-          },
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        filters: {
+          computedStatuses: [UserFeedComputedStatus.RequiresAttention],
+        },
+      });
 
-      const retryingResult = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          filters: {
-            computedStatuses: [UserFeedComputedStatus.Retrying],
-          },
-        }
-      );
+      const retryingResult = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        filters: {
+          computedStatuses: [UserFeedComputedStatus.Retrying],
+        },
+      });
 
       expect(result).toHaveLength(1);
       expect(result).toMatchObject([
@@ -1221,62 +1139,6 @@ describe("UserFeedsService", () => {
       expect(retryingResult).toMatchObject([
         {
           title: "title4",
-        },
-      ]);
-    });
-
-    it("works with user feed tag filters", async () => {
-      const user = {
-        discordUserId: "123",
-      };
-      const [feed1, feed2, feed3] = await userFeedModel.create([
-        {
-          title: "title1",
-          url: "url",
-          user,
-        },
-        {
-          title: "title2",
-          url: "url HERE",
-          user: {
-            discordUserId: user.discordUserId + "-other",
-          },
-        },
-        {
-          title: "title3",
-          url: "url HERE",
-          user,
-        },
-      ]);
-      const { _id: userId } = await userModel.create({
-        discordUserId: user.discordUserId,
-      });
-
-      const [, userFeedTag2] = await userFeedTagModel.create([
-        {
-          label: "tag1",
-          feedIds: [feed1._id, feed2._id],
-          userId: new Types.ObjectId(),
-        },
-        {
-          label: "tag2",
-          feedIds: [feed2._id, feed3._id],
-          userId: userId,
-        },
-      ]);
-
-      const result = await service.getFeedsByUser(userId, user.discordUserId, {
-        ...dto,
-        filters: {
-          userTagIds: [userFeedTag2._id.toHexString()],
-        },
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result).toMatchObject([
-        {
-          _id: feed3._id,
-          title: feed3.title,
         },
       ]);
     });
@@ -1365,16 +1227,12 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          filters: {
-            connectionDisabledCodes: [FeedConnectionDisabledCode.Manual],
-          },
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        filters: {
+          connectionDisabledCodes: [FeedConnectionDisabledCode.Manual],
+        },
+      });
 
       expect(result).toHaveLength(2);
       expect(result).toMatchObject([
@@ -1445,16 +1303,12 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedsByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          filters: {
-            connectionDisabledCodes: [""],
-          },
-        }
-      );
+      const result = await service.getFeedsByUser(user.discordUserId, {
+        ...dto,
+        filters: {
+          connectionDisabledCodes: [""],
+        },
+      });
 
       expect(result).toHaveLength(2);
       expect(result).toMatchObject(
@@ -1492,11 +1346,7 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedCountByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        dto
-      );
+      const result = await service.getFeedCountByUser(user.discordUserId, dto);
 
       expect(result).toEqual(1);
     });
@@ -1525,14 +1375,10 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedCountByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          search: "3",
-        }
-      );
+      const result = await service.getFeedCountByUser(user.discordUserId, {
+        ...dto,
+        search: "3",
+      });
 
       expect(result).toEqual(1);
     });
@@ -1561,14 +1407,10 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedCountByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          search: "here",
-        }
-      );
+      const result = await service.getFeedCountByUser(user.discordUserId, {
+        ...dto,
+        search: "here",
+      });
 
       expect(result).toEqual(1);
     });
@@ -1598,16 +1440,12 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedCountByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          filters: {
-            disabledCodes: [UserFeedDisabledCode.Manual],
-          },
-        }
-      );
+      const result = await service.getFeedCountByUser(user.discordUserId, {
+        ...dto,
+        filters: {
+          disabledCodes: [UserFeedDisabledCode.Manual],
+        },
+      });
 
       expect(result).toEqual(1);
     });
@@ -1631,14 +1469,10 @@ describe("UserFeedsService", () => {
         },
       ]);
 
-      const result = await service.getFeedCountByUser(
-        new Types.ObjectId(),
-        user.discordUserId,
-        {
-          ...dto,
-          search: "no matches",
-        }
-      );
+      const result = await service.getFeedCountByUser(user.discordUserId, {
+        ...dto,
+        search: "no matches",
+      });
 
       expect(result).toEqual(0);
     });
@@ -1707,235 +1541,97 @@ describe("UserFeedsService", () => {
     });
   });
 
-  describe("getEnforceWebhookWrites", () => {
-    it("disables webhooks if the user is not a supporter", async () => {
-      const secondDiscordUserId = discordUserId + "2";
-      const thirdDiscordUserId = discordUserId + "3";
-      const created = await userFeedModel.create([
-        {
-          title: "title1",
-          url: "url",
-          user: {
-            discordUserId: discordUserId,
-          },
-          refreshRateSeconds: 600,
-          connections: {
-            discordChannels: [
-              {
-                ...createMockDiscordChannelConnection({
-                  details: {
-                    webhook: {
-                      id: "1",
-                      guildId: "1",
-                      token: "1",
-                    },
-                  },
-                }),
-                disabledCode: FeedConnectionDisabledCode.MissingMedium,
-              },
-              {
-                ...createMockDiscordChannelConnection({
-                  details: {
-                    webhook: {
-                      id: "1",
-                      guildId: "1",
-                      token: "1",
-                    },
-                  },
-                }),
-              },
-              {
-                ...createMockDiscordChannelConnection(),
-              },
-            ],
-          },
+  describe("getFeedArticles", () => {
+    const validInput: GetFeedArticlesInput = {
+      limit: 1,
+      random: true,
+      url: "random-url",
+      discordUserId: "user-id",
+      formatter: {
+        options: {
+          formatTables: false,
+          stripImages: false,
+          dateFormat: "foo",
+          dateTimezone: "bar",
+          disableImageLinkPreviews: false,
+          dateLocale: undefined,
         },
-        {
-          title: "title2",
-          url: "url",
-          user: {
-            discordUserId: secondDiscordUserId,
-          },
-          refreshRateSeconds: 600,
-          connections: {
-            discordChannels: [
-              {
-                ...createMockDiscordChannelConnection({
-                  details: {
-                    webhook: {
-                      id: "1",
-                      guildId: "1",
-                      token: "1",
-                    },
-                  },
-                }),
-              },
-            ],
-          },
-        },
-        {
-          title: "title3",
-          url: "url",
-          user: {
-            discordUserId: thirdDiscordUserId,
-          },
-          refreshRateSeconds: 600,
-          connections: {
-            discordChannels: [
-              {
-                ...createMockDiscordChannelConnection({
-                  details: {
-                    webhook: {
-                      id: "1",
-                      guildId: "1",
-                      token: "1",
-                    },
-                  },
-                }),
-              },
-            ],
-          },
-        },
-      ]);
+      },
+    };
 
-      const writes = service.getEnforceWebhookWrites({
-        enforcementType: "all-users",
-        supporterDiscordUserIds: [secondDiscordUserId],
-      });
+    it("returns correctly", async () => {
+      const returned = {
+        requestStatus: GetArticlesResponseRequestStatus.Success,
+        articles: [],
+        totalArticles: 0,
+        selectedProperties: [],
+      };
 
-      await userFeedModel.bulkWrite(writes);
+      jest.spyOn(feedHandlerService, "getArticles").mockResolvedValue(returned);
 
-      const updatedFeeds = await userFeedModel
-        .find({
-          _id: {
-            $in: created.map((c) => c._id),
-          },
-        })
-        .lean();
+      const result = await service.getFeedArticles(validInput);
 
-      expect(updatedFeeds).toHaveLength(3);
-      // first user's webhook connections should be disabled
-      expect(
-        updatedFeeds[0].connections?.discordChannels[0].disabledCode
-      ).toEqual(FeedConnectionDisabledCode.NotPaidSubscriber);
-      expect(
-        updatedFeeds[0].connections?.discordChannels[1].disabledCode
-      ).toEqual(FeedConnectionDisabledCode.NotPaidSubscriber);
-      expect(
-        updatedFeeds[0].connections?.discordChannels[2].disabledCode
-      ).toEqual(FeedConnectionDisabledCode.NotPaidSubscriber);
-
-      // second user's webhook connection should be enabled
-      expect(
-        updatedFeeds[1].connections?.discordChannels[0].disabledCode
-      ).toBeUndefined();
-
-      // third user's webhook connection should be disabled
-      expect(
-        updatedFeeds[2].connections?.discordChannels[0].disabledCode
-      ).toEqual(FeedConnectionDisabledCode.NotPaidSubscriber);
-    });
-
-    it("does not disable manually-disabled webohook connections if user is not a supporter", async () => {
-      const created = await userFeedModel.create([
-        {
-          title: "title1",
-          url: "url",
-          user: {
-            discordUserId,
-          },
-          refreshRateSeconds: 600,
-          connections: {
-            discordChannels: [
-              {
-                ...createMockDiscordChannelConnection({
-                  disabledCode: FeedConnectionDisabledCode.Manual,
-                  details: {
-                    webhook: {
-                      id: "1",
-                      guildId: "1",
-                      token: "1",
-                    },
-                  },
-                }),
-              },
-            ],
-          },
-        },
-      ]);
-
-      const writes = service.getEnforceWebhookWrites({
-        enforcementType: "all-users",
-        supporterDiscordUserIds: [],
-      });
-
-      await userFeedModel.bulkWrite(writes);
-
-      const updatedFeeds = await userFeedModel
-        .find({
-          _id: {
-            $in: created.map((c) => c._id),
-          },
-        })
-        .lean();
-
-      expect(updatedFeeds).toHaveLength(1);
-      expect(
-        updatedFeeds[0].connections?.discordChannels[0].disabledCode
-      ).toEqual(FeedConnectionDisabledCode.Manual);
-    });
-
-    it("enables webhooks if the user is a supporter", async () => {
-      const created = await userFeedModel.create([
-        {
-          title: "title1",
-          url: "url",
-          user: {
-            discordUserId,
-          },
-          refreshRateSeconds: 600,
-          connections: {
-            discordChannels: [
-              {
-                ...createMockDiscordChannelConnection({
-                  disabledCode: FeedConnectionDisabledCode.NotPaidSubscriber,
-                  details: {
-                    webhook: {
-                      id: "1",
-                      guildId: "1",
-                      token: "1",
-                    },
-                  },
-                }),
-              },
-            ],
-          },
-        },
-      ]);
-
-      const writes = service.getEnforceWebhookWrites({
-        enforcementType: "all-users",
-        supporterDiscordUserIds: [discordUserId],
-      });
-
-      await userFeedModel.bulkWrite(writes);
-
-      const updatedFeeds = await userFeedModel
-        .find({
-          _id: {
-            $in: created.map((c) => c._id),
-          },
-        })
-        .lean();
-
-      expect(updatedFeeds).toHaveLength(1);
-      expect(
-        updatedFeeds[0].connections?.discordChannels[0].disabledCode
-      ).toBeUndefined();
+      expect(result).toEqual(returned);
     });
   });
 
-  describe("enforceAllUserFeedLimits", () => {
+  describe("getFeedArticleProperties", () => {
+    it("returns correctly", async () => {
+      jest.spyOn(feedHandlerService, "getArticles").mockResolvedValue({
+        requestStatus: "foo",
+        articles: [
+          {
+            a: "1",
+          },
+          {
+            b: "2",
+            a: "a",
+          },
+          {
+            c: "3",
+          },
+        ],
+      } as never);
+
+      const result = await service.getFeedArticleProperties({
+        url: "url",
+      });
+
+      expect(result).toEqual({
+        requestStatus: "foo",
+        properties: ["a", "b", "c"],
+      });
+    });
+
+    it("returns sorts the returned properties", async () => {
+      jest.spyOn(feedHandlerService, "getArticles").mockResolvedValue({
+        requestStatus: "foo",
+        articles: [
+          {
+            z: "1",
+          },
+          {
+            c: "2",
+            a: "a",
+          },
+          {
+            b: "3",
+          },
+        ],
+      } as never);
+
+      const result = await service.getFeedArticleProperties({
+        url: "url",
+      });
+
+      expect(result).toEqual({
+        requestStatus: "foo",
+        properties: ["a", "b", "c", "z"],
+      });
+    });
+  });
+
+  describe("enforceUserFeedLimits", () => {
     describe("supporter limits", () => {
       it("enforces feed limits correctly", async () => {
         const feed = await userFeedModel.create([
@@ -1971,7 +1667,7 @@ describe("UserFeedsService", () => {
           },
           {
             $set: {
-              createdAt: dayjs().subtract(5, "days").toDate(),
+              createdAt: dayjs().subtract(5, "days"),
             },
           }
         );
@@ -1982,12 +1678,12 @@ describe("UserFeedsService", () => {
           },
           {
             $set: {
-              createdAt: dayjs().subtract(10, "days").toDate(),
+              createdAt: dayjs().subtract(10, "days"),
             },
           }
         );
 
-        await service.enforceAllUserFeedLimits([
+        await service.enforceUserFeedLimits([
           {
             discordUserId,
             maxUserFeeds: 2,
@@ -2014,104 +1710,6 @@ describe("UserFeedsService", () => {
         );
       });
 
-      it("enforces feed limits with manually disabled feeds correctly", async () => {
-        await userFeedModel.create([
-          {
-            title: "title1",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            refreshRateSeconds: 600,
-          },
-          {
-            title: "title2",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            refreshRateSeconds: 600,
-            disabledCode: UserFeedDisabledCode.Manual,
-          },
-          {
-            title: "title3",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            refreshRateSeconds: 600,
-          },
-        ]);
-
-        await service.enforceAllUserFeedLimits([
-          {
-            discordUserId,
-            maxUserFeeds: 2,
-            refreshRateSeconds: 600,
-          },
-        ]);
-
-        const result = await userFeedModel
-          .find({
-            disabledCode: UserFeedDisabledCode.ExceededFeedLimit,
-            "user.discordUserId": discordUserId,
-          })
-          .select("title")
-          .lean();
-
-        expect(result).toHaveLength(0);
-      });
-
-      it("should not enable manually disabled codes while enforcing limits", async () => {
-        await userFeedModel.create([
-          {
-            title: "title1",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            refreshRateSeconds: 600,
-            disabledCode: UserFeedDisabledCode.Manual,
-          },
-          {
-            title: "title2",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            refreshRateSeconds: 600,
-            disabledCode: UserFeedDisabledCode.Manual,
-          },
-          {
-            title: "title3",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            refreshRateSeconds: 600,
-            disabledCode: UserFeedDisabledCode.Manual,
-          },
-        ]);
-
-        await service.enforceAllUserFeedLimits([
-          {
-            discordUserId,
-            maxUserFeeds: 2,
-            refreshRateSeconds: 600,
-          },
-        ]);
-
-        const result = await userFeedModel
-          .find({
-            disabledCode: UserFeedDisabledCode.Manual,
-            "user.discordUserId": discordUserId,
-          })
-          .select("title")
-          .lean();
-
-        expect(result).toHaveLength(3);
-      });
-
       it("does not disable any feeds if not over limit", async () => {
         const feed = await userFeedModel.create([
           {
@@ -2132,7 +1730,7 @@ describe("UserFeedsService", () => {
           },
         ]);
 
-        await service.enforceAllUserFeedLimits([
+        await service.enforceUserFeedLimits([
           {
             discordUserId: discordUserId,
             maxUserFeeds: 3,
@@ -2187,7 +1785,7 @@ describe("UserFeedsService", () => {
           },
         ]);
 
-        await service.enforceAllUserFeedLimits([
+        await service.enforceUserFeedLimits([
           {
             discordUserId: discordUserId,
             maxUserFeeds: 1,
@@ -2216,56 +1814,6 @@ describe("UserFeedsService", () => {
       });
     });
 
-    it("does not enable manually disabled feeds if user is under limit", async () => {
-      await userFeedModel.create([
-        {
-          title: "title1",
-          url: "url",
-          user: {
-            discordUserId,
-          },
-          disabledCode: UserFeedDisabledCode.Manual,
-          refreshRateSeconds: 600,
-        },
-        {
-          title: "title2",
-          url: "url",
-          user: {
-            discordUserId,
-          },
-          disabledCode: UserFeedDisabledCode.Manual,
-          refreshRateSeconds: 600,
-        },
-        {
-          title: "title3",
-          url: "url",
-          user: {
-            discordUserId,
-          },
-          disabledCode: UserFeedDisabledCode.Manual,
-          refreshRateSeconds: 600,
-        },
-      ]);
-
-      await service.enforceAllUserFeedLimits([
-        {
-          discordUserId: discordUserId,
-          maxUserFeeds: 1,
-          refreshRateSeconds: 600,
-        },
-      ]);
-
-      const result = await userFeedModel
-        .find({
-          "user.discordUserId": discordUserId,
-          disabledCode: UserFeedDisabledCode.Manual,
-        })
-        .select(["title", "disabledCode"])
-        .lean();
-
-      expect(result).toHaveLength(3);
-    });
-
     describe("default limits", () => {
       it("disables over-limit feeds for non-supporters", async () => {
         await userFeedModel.create([
@@ -2292,7 +1840,7 @@ describe("UserFeedsService", () => {
           },
         ]);
 
-        await service.enforceAllUserFeedLimits([]);
+        await service.enforceUserFeedLimits([]);
 
         const result = await userFeedModel
           .find({
@@ -2305,57 +1853,6 @@ describe("UserFeedsService", () => {
           .lean();
 
         expect(result).toHaveLength(supportersService.defaultMaxUserFeeds);
-      });
-
-      it("treats manually disabled as same as exceeded feed limit", async () => {
-        await userFeedModel.create([
-          {
-            title: "title1",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-          },
-          {
-            title: "title2",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-            disabledCode: UserFeedDisabledCode.Manual,
-          },
-          {
-            title: "title3",
-            url: "url",
-            user: {
-              discordUserId: discordUserId,
-            },
-          },
-        ]);
-
-        await service.enforceAllUserFeedLimits([]);
-
-        const result = await userFeedModel
-          .find({
-            disabledCode: {
-              $exists: false,
-            },
-            "user.discordUserId": discordUserId,
-          })
-          .select("title")
-          .lean();
-
-        expect(result).toHaveLength(supportersService.defaultMaxUserFeeds);
-
-        const manuallyDisabled = await userFeedModel
-          .find({
-            disabledCode: UserFeedDisabledCode.Manual,
-            "user.discordUserId": discordUserId,
-          })
-          .select("title")
-          .lean();
-
-        expect(manuallyDisabled).toHaveLength(1);
       });
 
       it("enables feeds if user is under limit with disabled feeds", async () => {
@@ -2408,7 +1905,7 @@ describe("UserFeedsService", () => {
           }
         );
 
-        await service.enforceAllUserFeedLimits([]);
+        await service.enforceUserFeedLimits([]);
 
         const result = await userFeedModel
           .find({
@@ -2454,7 +1951,7 @@ describe("UserFeedsService", () => {
           },
         ]);
 
-        await service.enforceAllUserFeedLimits([]);
+        await service.enforceUserFeedLimits([]);
 
         const result = await userFeedModel
           .find({

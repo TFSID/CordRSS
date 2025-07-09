@@ -25,6 +25,9 @@ import {
   Tbody,
   Td,
   Switch,
+  Editable,
+  EditablePreview,
+  EditableInput,
 } from "@chakra-ui/react";
 import { useEffect } from "react";
 import { Controller, FieldError, useFieldArray, useFormContext, useWatch } from "react-hook-form";
@@ -209,7 +212,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
               minW={{ md: "md", lg: "2xl", xl: "3xl" }}
             >
               <FormControl isInvalid={!!authorNameError}>
-                <FormLabel variant="inline">Author Name</FormLabel>
+                <FormLabel variant="inline">Name</FormLabel>
                 <Controller
                   name={`embeds.${index}.author.name`}
                   control={control}
@@ -221,7 +224,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                 {authorNameError && <FormErrorMessage>{authorNameError}</FormErrorMessage>}
               </FormControl>
               <FormControl isInvalid={!!authorUrlError}>
-                <FormLabel variant="inline">Author URL</FormLabel>
+                <FormLabel variant="inline">URL</FormLabel>
                 <Controller
                   name={`embeds.${index}.author.url`}
                   control={control}
@@ -233,7 +236,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                 {authorUrlError && <FormErrorMessage>{authorUrlError}</FormErrorMessage>}
               </FormControl>
               <FormControl isInvalid={!!authorIconUrlError}>
-                <FormLabel variant="inline">Author Icon URL</FormLabel>
+                <FormLabel variant="inline">Icon URL</FormLabel>
                 <Controller
                   name={`embeds.${index}.author.iconUrl`}
                   control={control}
@@ -263,7 +266,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
               minW={{ md: "md", lg: "2xl", xl: "3xl" }}
             >
               <FormControl isInvalid={!!titleError}>
-                <FormLabel variant="inline">Title Text</FormLabel>
+                <FormLabel variant="inline">Text</FormLabel>
                 <Controller
                   name={`embeds.${index}.title`}
                   control={control}
@@ -275,7 +278,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                 {titleError && <FormErrorMessage>{titleError}</FormErrorMessage>}
               </FormControl>
               <FormControl isInvalid={!!urlError}>
-                <FormLabel variant="inline">Title URL</FormLabel>
+                <FormLabel variant="inline">URL</FormLabel>
                 <Controller
                   name={`embeds.${index}.url`}
                   control={control}
@@ -305,7 +308,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
               minW={{ md: "md", lg: "2xl", xl: "3xl" }}
             >
               <FormControl isInvalid={!!descriptionError}>
-                <FormLabel variant="inline">Description Text</FormLabel>
+                <FormLabel variant="inline">Text</FormLabel>
                 <Controller
                   name={`embeds.${index}.description`}
                   control={control}
@@ -365,7 +368,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
               minW={{ md: "md", lg: "2xl", xl: "3xl" }}
             >
               <FormControl isInvalid={!!thumbnailUrlError}>
-                <FormLabel variant="inline">Thumbnail Image URL</FormLabel>
+                <FormLabel variant="inline">Image URL</FormLabel>
                 <Controller
                   name={`embeds.${index}.thumbnail.url`}
                   control={control}
@@ -395,7 +398,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
               minW={{ md: "md", lg: "2xl", xl: "3xl" }}
             >
               <FormControl isInvalid={!!footerTextError}>
-                <FormLabel variant="inline">Footer Text</FormLabel>
+                <FormLabel variant="inline">Text</FormLabel>
                 <Controller
                   name={`embeds.${index}.footer.text`}
                   control={control}
@@ -407,7 +410,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                 {footerTextError && <FormErrorMessage>{footerTextError}</FormErrorMessage>}
               </FormControl>
               <FormControl isInvalid={!!footerIconUrlError}>
-                <FormLabel variant="inline">Footer Icon URL</FormLabel>
+                <FormLabel variant="inline">Icon URL</FormLabel>
                 <Controller
                   name={`embeds.${index}.footer.iconUrl`}
                   control={control}
@@ -441,10 +444,10 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                   <Table size="sm">
                     <Thead>
                       <Tr>
-                        <Th>Field Name</Th>
-                        <Th>Field Value</Th>
-                        <Th>Is Field Inline?</Th>
-                        <Th isNumeric>Actions</Th>
+                        <Th>Name</Th>
+                        <Th>Value</Th>
+                        <Th>Inline?</Th>
+                        <Th isNumeric />
                       </Tr>
                     </Thead>
                     <Tbody>
@@ -472,22 +475,22 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                                 }
                                 borderRadius="md"
                               >
-                                <Input
-                                  size="sm"
-                                  bg="gray.900"
+                                <Editable
                                   value={f.name}
-                                  placeholder="Field name"
-                                  onChange={(e) =>
+                                  onChange={(newVal) =>
                                     setValue(
                                       `embeds.${index}.fields.${fieldIndex}.name`,
-                                      e.target.value.trim(),
+                                      newVal.trim(),
                                       {
                                         shouldDirty: true,
                                         shouldTouch: true,
                                       }
                                     )
                                   }
-                                />
+                                >
+                                  <EditablePreview width="100%" padding={2} cursor="pointer" />
+                                  <EditableInput />
+                                </Editable>
                               </Td>
                               <Td
                                 border={
@@ -497,27 +500,26 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                                 }
                                 borderRadius="md"
                               >
-                                <Input
-                                  size="sm"
-                                  bg="gray.900"
+                                <Editable
                                   value={f.value}
-                                  placeholder="Field value"
-                                  onChange={(e) =>
+                                  onChange={(newVal) => {
                                     setValue(
                                       `embeds.${index}.fields.${fieldIndex}.value`,
-                                      e.target.value.trim(),
+                                      newVal.trim(),
                                       {
                                         shouldDirty: true,
                                         shouldTouch: true,
                                       }
-                                    )
-                                  }
-                                />
+                                    );
+                                  }}
+                                >
+                                  <EditablePreview width="100%" padding={2} cursor="pointer" />
+                                  <EditableInput />
+                                </Editable>
                               </Td>
                               <Td>
                                 <Switch
                                   isChecked={!!f.inline}
-                                  aria-label={`Is field ${fieldIndex + 1} inline?`}
                                   onChange={(e) =>
                                     setValue(
                                       `embeds.${index}.fields.${fieldIndex}.inline`,
@@ -533,9 +535,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                               <Td isNumeric>
                                 <HStack justifyContent="flex-end">
                                   <IconButton
-                                    aria-label={`Move field ${fieldIndex + 1} from position ${
-                                      fieldIndex + 1
-                                    } to position ${fieldIndex <= 0 ? 1 : fieldIndex}`}
+                                    aria-label="Move up"
                                     icon={<ChevronUpIcon />}
                                     variant="ghost"
                                     size="sm"
@@ -543,13 +543,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                                     onClick={() => moveField(fieldIndex, fieldIndex - 1)}
                                   />
                                   <IconButton
-                                    aria-label={`Move field ${fieldIndex + 1} from position ${
-                                      fieldIndex + 1
-                                    } to position ${
-                                      fieldIndex + 1 === embedFields.length
-                                        ? embedFields.length
-                                        : fieldIndex + 2
-                                    }`}
+                                    aria-label="Move down"
                                     icon={<ChevronDownIcon />}
                                     variant="ghost"
                                     size="sm"
@@ -557,7 +551,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                                     onClick={() => moveField(fieldIndex, fieldIndex + 1)}
                                   />
                                   <IconButton
-                                    aria-label={`Delete field ${fieldIndex + 1}`}
+                                    aria-label="Remove"
                                     icon={<DeleteIcon />}
                                     variant="ghost"
                                     size="sm"
@@ -595,7 +589,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
             spacing={{ base: "1.5", md: "8" }}
             justify="space-between"
           >
-            <Text size="sm" fontWeight={400} id="timestamp-label">
+            <Text size="sm" fontWeight={400}>
               Timestamp
             </Text>
             <Stack
@@ -609,11 +603,7 @@ export const DiscordMessageEmbedForm = ({ index }: Props) => {
                 control={control}
                 render={({ field }) => (
                   <FormControl>
-                    <RadioGroup
-                      {...field}
-                      value={field.value || ""}
-                      aria-labelledby="timestamp-label"
-                    >
+                    <RadioGroup {...field} value={field.value || ""}>
                       <Stack spacing={4}>
                         <Radio value="" defaultChecked>
                           {t("features.feedConnections.components.embedForm.timestampNone")}

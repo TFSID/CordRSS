@@ -1,6 +1,7 @@
 export * from "./AddConnectionDialog";
 export * from "./FiltersForm";
 export * from "./EditConnectionWebhookDialog";
+export * from "./EditConnectionChannelDialog";
 export * from "./DeleteConnectionButton";
 export * from "./SendConnectionTestArticleButton";
 export * from "./ArticlePlaceholderTable";
@@ -9,7 +10,7 @@ export * from "./MessageTabSection";
 export * from "./ArticleFilterResults/ArticleFilterResultsView";
 export * from "./ConnectionDisabledAlert";
 export * from "./ComparisonsTabSection";
-export * from "./UserFeedMiscSettingsTabSection";
+export * from "./UserFeedSettingsTabSection";
 export * from "./DiscordMessageForm";
 export * from "./ArticlePropertySelect";
 export * from "./CloneDiscordConnectionCloneDialog";

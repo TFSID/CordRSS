@@ -19,14 +19,12 @@ export enum ApiErrorCode {
   WEBHOOK_MISSING = "WEBHOOK_MISSING",
   WEBHOOK_INVALID = "WEBHOOK_INVALID",
   FEED_MISSING_CHANNEL_PERMISSION = "FEED_MISSING_CHANNEL_PERMISSION",
-  FEED_MISSING_VIEW_CHANNEL_PERMISSION = "FEED_MISSING_VIEW_CHANNEL_PERMISSION",
   FEED_MISSING_CHANNEL = "FEED_MISSING_CHANNEL",
   FEED_USER_MISSING_MANAGE_GUILD = "FEED_USER_MISSING_MANAGE_GUILD",
   FEED_LIMIT_REACHED = "FEED_LIMIT_REACHED",
   FEED_NOT_FAILED = "FEED_NOT_FAILED",
   FEED_NOT_FOUND = "FEED_NOT_FOUND",
   FEED_TOO_LARGE = "FEED_TOO_LARGE",
-  ADD_FEED_WITH_SOURCE_FEED_NOT_FOUND = "ADD_FEED_WITH_SOURCE_FEED_NOT_FOUND",
   FEED_INVALID_FILTER_EXPRESSION = "FEED_INVALID_FILTER_EXPRESSION",
   BANNED_FEED = "BANNED_FEED",
   DISCORD_CHANNEL_NOT_OWNED_BY_GUILD = "DISCORD_CHANNEL_NOT_OWNED_BY_GUILD",
@@ -74,8 +72,6 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
     " that has not been created by another application",
   FEED_MISSING_CHANNEL: "Channel does not exist",
   FEED_MISSING_CHANNEL_PERMISSION: "Insufficient bot permissions in channel",
-  FEED_MISSING_VIEW_CHANNEL_PERMISSION:
-    "Bot is missing View Channel permission",
   FEED_USER_MISSING_MANAGE_GUILD: "User is missing Manage Server permission",
   FEED_LIMIT_REACHED: "Feed limit reached",
   BANNED_FEED: "Feed is banned",
@@ -84,8 +80,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   DISCORD_CAHNNEL_INVALID: "Selected channel is not accepted",
   FEED_NOT_FAILED:
     "The feed is not in a failed state. It must be in a failed state for it to be retried.",
-  FEED_NOT_FOUND:
-    "Feed does not exist or is not accessible. You may confirm by directly going to the feed link and checking that the feed is valid and publicly accessible.",
+  FEED_NOT_FOUND: "Feed does not exist",
   FEED_TOO_LARGE: "Feed is too large to be processed",
   FEED_INVALID_FILTER_EXPRESSION: "Invalid filter expression",
   FEED_CONNECTION_CANNOT_ENABLE_AUTO_DISABLED:
@@ -111,5 +106,4 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
     "Invalid preview input in regex search for custom placeholders",
   INVALID_FILTERS_REGEX: "Invalid filters regex",
   FEED_INVALID_SSL_CERT: "Invalid SSL certificate on feed site",
-  ADD_FEED_WITH_SOURCE_FEED_NOT_FOUND: "Source feed not found",
 };

@@ -45,7 +45,6 @@ import {
   GetFeedDiscordChannelConnectionPipe,
   GetFeedDiscordChannelConnectionPipeOutput,
 } from "./pipes";
-import { UserFeedTargetFeedSelectionType } from "../user-feeds/constants/target-feed-selection-type.type";
 
 @Controller("user-feeds/:feedId/connections")
 @UseGuards(DiscordOAuth2Guard)
@@ -73,7 +72,6 @@ export class FeedConnectionsDiscordChannelsController {
       name,
       webhook,
       applicationWebhook,
-      threadCreationMethod,
     }: CreateDiscordChnnnelConnectionInputDto,
     @DiscordAccessToken()
     { access_token, discord: { id: discordUserId } }: SessionAccessToken
@@ -87,7 +85,6 @@ export class FeedConnectionsDiscordChannelsController {
         webhook,
         applicationWebhook,
         userDiscordUserId: discordUserId,
-        threadCreationMethod,
       }
     );
 
@@ -179,7 +176,6 @@ export class FeedConnectionsDiscordChannelsController {
   }
 
   @Post("/discord-channels/:connectionId/clone")
-  @UseFilters(AddDiscordChannelConnectionFilter)
   async clone(
     @Param(
       "feedId",
@@ -191,19 +187,16 @@ export class FeedConnectionsDiscordChannelsController {
       }),
       GetFeedDiscordChannelConnectionPipe
     )
-    [{ connection }]: GetFeedDiscordChannelConnectionPipeOutput[],
+    [{ feed, connection }]: GetFeedDiscordChannelConnectionPipeOutput[],
     @Body(ValidationPipe)
     data: CreateDiscordChannelConnectionCloneInputDto,
     @DiscordAccessToken()
     { access_token, discord: { id: discordUserId } }: SessionAccessToken
   ) {
     const result = await this.service.cloneConnection(
+      feed,
       connection,
-      {
-        ...data,
-        targetFeedSelectionType:
-          data.targetFeedSelectionType || UserFeedTargetFeedSelectionType.All,
-      },
+      data,
       access_token,
       discordUserId
     );
@@ -242,8 +235,6 @@ export class FeedConnectionsDiscordChannelsController {
       componentRows,
       externalProperties,
       includeCustomPlaceholderPreviews,
-      channelNewThreadTitle,
-      channelNewThreadExcludesPreview,
     }: CreateDiscordChannelConnectionPreviewInputDto
   ): Promise<CreateDiscordChannelConnectionPreviewOutputDto> {
     const result = await this.service.createPreview({
@@ -262,8 +253,6 @@ export class FeedConnectionsDiscordChannelsController {
       componentRows,
       includeCustomPlaceholderPreviews,
       externalProperties,
-      channelNewThreadTitle,
-      channelNewThreadExcludesPreview,
     });
 
     return {
@@ -300,18 +289,12 @@ export class FeedConnectionsDiscordChannelsController {
       rateLimits,
       componentRows,
       applicationWebhook,
-      channelNewThreadTitle,
-      threadCreationMethod,
-      channelNewThreadExcludesPreview,
     }: UpdateDiscordChannelConnectionInputDto,
     @DiscordAccessToken() { access_token }: SessionAccessToken
   ): Promise<UpdateDiscordChannelConnectionOutputDto> {
     let useDisableCode: FeedConnectionDisabledCode | undefined | null =
       undefined;
     let useChannelId: string | undefined = channelId;
-    let useApplicationWebhook:
-      | UpdateDiscordChannelConnectionInputDto["applicationWebhook"]
-      | undefined = undefined;
 
     if (connection.disabledCode) {
       if (connection.disabledCode === FeedConnectionDisabledCode.BadFormat) {
@@ -332,27 +315,10 @@ export class FeedConnectionsDiscordChannelsController {
         connection.disabledCode ===
         FeedConnectionDisabledCode.MissingPermissions
       ) {
-        if (disabledCode === null) {
+        if (disabledCode === null && connection.details.channel) {
           // Force re-validation of channel permissions
-          if (connection.details.channel) {
-            useChannelId = channelId || connection.details.channel.id;
-            useDisableCode = null;
-          } else if (
-            connection.details.webhook?.channelId &&
-            connection.details.webhook.name
-          ) {
-            useApplicationWebhook = {
-              channelId: connection.details.webhook?.channelId,
-              name: connection.details.webhook?.name,
-              iconUrl: connection.details.webhook?.iconUrl,
-              threadId: connection.details.webhook?.threadId,
-            };
-            useDisableCode = null;
-          } else {
-            throw new Error(
-              `Unhandled case when attempting to enable connection due to missing permissions`
-            );
-          }
+          useChannelId = channelId || connection.details.channel.id;
+          useDisableCode = null;
         }
       } else if (disabledCode === null) {
         throw new CannotEnableAutoDisabledConnection();
@@ -371,7 +337,6 @@ export class FeedConnectionsDiscordChannelsController {
         updates: {
           filters,
           name,
-          threadCreationMethod,
           disabledCode: useDisableCode,
           splitOptions,
           mentions,
@@ -379,20 +344,14 @@ export class FeedConnectionsDiscordChannelsController {
           rateLimits,
           details: {
             placeholderLimits,
-            channelNewThreadTitle,
-            channelNewThreadExcludesPreview,
             componentRows,
-            channel:
-              !useApplicationWebhook && useChannelId
-                ? {
-                    id: useChannelId,
-                  }
-                : undefined,
-            webhook:
-              useApplicationWebhook || useChannelId ? undefined : webhook,
-            applicationWebhook:
-              useApplicationWebhook ||
-              (useChannelId ? undefined : applicationWebhook),
+            channel: useChannelId
+              ? {
+                  id: useChannelId,
+                }
+              : undefined,
+            webhook: useChannelId ? undefined : webhook,
+            applicationWebhook: useChannelId ? undefined : applicationWebhook,
             embeds: convertToFlatDiscordEmbeds(embeds),
             content,
             formatter,

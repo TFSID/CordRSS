@@ -15,10 +15,9 @@ import {
   FeedRejectedDisabledCode,
   Article,
   UserFeedFormatOptions,
-  FeedResponseRequestStatus,
 } from "../shared";
 import { RabbitSubscribe, AmqpConnection } from "@golevelup/nestjs-rabbitmq";
-import { MikroORM, CreateRequestContext } from "@mikro-orm/core";
+import { MikroORM, UseRequestContext } from "@mikro-orm/core";
 import { ArticleDeliveryResult } from "./types/article-delivery-result.type";
 import logger from "../shared/utils/logger";
 import {
@@ -41,7 +40,6 @@ import { EntityRepository } from "@mikro-orm/postgresql";
 import { z } from "zod";
 import { CacheStorageService } from "../cache-storage/cache-storage.service";
 import { PartitionedFeedArticleFieldStoreService } from "../articles/partitioned-feed-article-field-store.service";
-import dayjs from "dayjs";
 
 @Injectable()
 export class FeedEventHandlerService {
@@ -78,16 +76,10 @@ export class FeedEventHandlerService {
         logger.info(
           `User feed event for feed ${event.data.feed.id} is already being processed, ignoring`
         );
-
-        return;
       }
 
       // Require to be separated to use with MikroORM's decorator @UseRequestContext()
-      await this.partitionedFeedArticleStoreService.startContext(async () =>
-        this.deliveryRecordService.startContext(
-          async () => await this.handleV2EventWithDb(event)
-        )
-      );
+      await this.handleV2EventWithDb(event);
     } catch (err) {
       logger.error(`Failed to handle feed event`, {
         feedId: event.data.feed.id,
@@ -142,7 +134,7 @@ export class FeedEventHandlerService {
     }
   }
 
-  @CreateRequestContext()
+  @UseRequestContext()
   private async handleArticleDeliveryResult({
     result,
     job,
@@ -236,7 +228,7 @@ export class FeedEventHandlerService {
     }
   }
 
-  @CreateRequestContext()
+  @UseRequestContext()
   async handleV2EventWithDb(event: FeedV2Event) {
     try {
       feedV2EventSchema.parse(event);
@@ -271,6 +263,12 @@ export class FeedEventHandlerService {
         },
       } = event;
 
+      this.debugLog(
+        `Debug ${event.data.feed.id}: Fetching feed XML from ${url}`,
+        {},
+        event.debug
+      );
+
       let lastHashSaved: string | null = null;
 
       if (
@@ -284,12 +282,6 @@ export class FeedEventHandlerService {
       let response: Awaited<
         ReturnType<typeof FeedFetcherService.prototype.fetch>
       > | null = null;
-
-      this.debugLog(
-        `Debug ${event.data.feed.id}: Fetching feed XML from ${url}`,
-        {},
-        event.debug
-      );
 
       try {
         response = await this.feedFetcherService.fetch(
@@ -315,16 +307,12 @@ export class FeedEventHandlerService {
           );
 
           response = null;
-        } else {
-          throw err;
         }
+
+        return;
       }
 
-      if (
-        !response ||
-        response.requestStatus === FeedResponseRequestStatus.Pending ||
-        response.requestStatus === FeedResponseRequestStatus.MatchedHash
-      ) {
+      if (!response || !response.body) {
         this.debugLog(
           `Debug ${event.data.feed.id}: no response body. is pending request or` +
             ` matched hash`,
@@ -337,9 +325,6 @@ export class FeedEventHandlerService {
         return;
       }
 
-      const useResponseBody = response.body || "";
-      const useResponseBodyHash = response.bodyHash || "";
-
       this.debugLog(
         `Debug ${event.data.feed.id}: Parsing feed XML from ${url}`,
         {},
@@ -347,27 +332,26 @@ export class FeedEventHandlerService {
       );
 
       const { allArticles, articlesToDeliver: articles } =
-        await this.articlesService.getArticlesToDeliverFromXml(
-          useResponseBody,
-          {
-            id: event.data.feed.id,
-            blockingComparisons,
-            passingComparisons,
-            formatOptions: {
-              dateFormat: event.data.feed.formatOptions?.dateFormat,
-              dateTimezone: event.data.feed.formatOptions?.dateTimezone,
-              disableImageLinkPreviews:
-                event.data.feed.formatOptions?.disableImageLinkPreviews,
-              dateLocale: event.data.feed.formatOptions?.dateLocale,
-            },
-            dateChecks: event.data.feed.dateChecks,
-            debug: event.debug,
-            useParserRules: getParserRules({ url: event.data.feed.url }),
-            externalFeedProperties: event.data.feed.externalProperties,
-          }
-        );
+        await this.articlesService.getArticlesToDeliverFromXml(response.body, {
+          id: event.data.feed.id,
+          blockingComparisons,
+          passingComparisons,
+          formatOptions: {
+            dateFormat: event.data.feed.formatOptions?.dateFormat,
+            dateTimezone: event.data.feed.formatOptions?.dateTimezone,
+            disableImageLinkPreviews:
+              event.data.feed.formatOptions?.disableImageLinkPreviews,
+            dateLocale: event.data.feed.formatOptions?.dateLocale,
+          },
+          dateChecks: event.data.feed.dateChecks,
+          debug: event.debug,
+          useParserRules: getParserRules({ url: event.data.feed.url }),
+          externalFeedProperties: event.data.feed.externalProperties,
+        });
 
       await this.updateFeedArticlesInCache({ event, articles: allArticles });
+
+      // START TEMPORARY - Should revisit this for a more robust retry strategy
 
       const foundRetryRecord = await this.feedRetryRecordRepo.findOne(
         {
@@ -390,6 +374,8 @@ export class FeedEventHandlerService {
         });
       }
 
+      // END TEMPORARY
+
       if (!articles.length) {
         this.debugLog(
           `Debug ${event.data.feed.id}: Ignoring feed event due to no` +
@@ -400,7 +386,7 @@ export class FeedEventHandlerService {
 
         await this.responseHashService.set({
           feedId: event.data.feed.id,
-          hash: useResponseBodyHash,
+          hash: response.bodyHash,
         });
 
         return [];
@@ -418,7 +404,7 @@ export class FeedEventHandlerService {
 
       this.debugLog(
         `Debug ${event.data.feed.id}: Storing delivery states`,
-        { deliveryStates },
+        {},
         event.debug
       );
 
@@ -429,8 +415,6 @@ export class FeedEventHandlerService {
       );
 
       try {
-        await this.orm.em.flush();
-        await this.deliveryRecordService.flushPendingInserts();
         deliveryStates.forEach((state) => {
           if (state.status !== ArticleDeliveryStatus.Rejected) {
             return;
@@ -467,60 +451,37 @@ export class FeedEventHandlerService {
 
       await this.responseHashService.set({
         feedId: event.data.feed.id,
-        hash: useResponseBodyHash,
+        hash: response.bodyHash,
       });
 
-      this.logEventFinish(event, {
-        numberOfArticles: allArticles.length,
-      });
+      this.logEventFinish(event);
 
       return deliveryStates;
     } catch (err) {
       if (err instanceof InvalidFeedException) {
-        logger.info(`Ignoring feed event due to invalid feed`, {
+        logger.debug(`Ignoring feed event due to invalid feed`, {
           event,
-          xml: err.feedText,
           stack: (err as Error).stack,
         });
 
-        const retryRecord = await this.feedRetryRecordRepo.findOne({
-          feed_id: event.data.feed.id,
-        });
-
-        const createdAt = retryRecord?.created_at;
-        let disableFeed = false;
-
-        if (createdAt) {
-          const cutoffTime = dayjs(createdAt).add(1, "day");
-
-          if (dayjs().isAfter(cutoffTime)) {
-            logger.info(
-              `Feed ${event.data.feed.id} exceeded retry cutoff date for invalid feed` +
-                `, sending disable event`,
-              {
-                xml: err.feedText,
-              }
-            );
-
-            disableFeed = true;
+        const retryRecord = await this.feedRetryRecordRepo.findOne(
+          {
+            feed_id: event.data.feed.id,
+          },
+          {
+            fields: ["id", "attempts_so_far"],
           }
-        } else if (
-          retryRecord?.attempts_so_far &&
-          retryRecord.attempts_so_far >= 8
-        ) {
-          logger.info(
-            `Feed ${event.data.feed.id} exceeded retry limit for invalid feed` +
-              `, sending disable event`,
-            {
-              xml: err.feedText,
-            }
-          );
-
-          disableFeed = true;
-        }
+        );
 
         // Rudimentary retry to alleviate some pressure
-        if (disableFeed && retryRecord) {
+        if (retryRecord?.attempts_so_far && retryRecord.attempts_so_far >= 8) {
+          this.debugLog(
+            `Debug ${event.data.feed.id}: Exceeded retry limit for invalid feed` +
+              `, sending disable event`,
+            {},
+            event.debug
+          );
+
           this.amqpConnection.publish(
             "",
             MessageBrokerQueue.FeedRejectedDisableFeed,
@@ -550,7 +511,6 @@ export class FeedEventHandlerService {
           await this.feedRetryRecordRepo.upsert({
             feed_id: event.data.feed.id,
             attempts_so_far: (retryRecord?.attempts_so_far || 0) + 1,
-            created_at: retryRecord?.created_at || new Date(),
           });
         }
 
@@ -575,7 +535,7 @@ export class FeedEventHandlerService {
     }
   }
 
-  @CreateRequestContext()
+  @UseRequestContext()
   async handleFeedDeletedEvent(data: FeedDeletedEvent) {
     const {
       data: {
@@ -605,7 +565,6 @@ export class FeedEventHandlerService {
     event: FeedV2Event,
     meta?: {
       error?: Error;
-      numberOfArticles?: number;
     }
   ) {
     if (event.timestamp) {
@@ -621,7 +580,6 @@ export class FeedEventHandlerService {
           feedId: event.data.feed.id,
           feedURL: event.data.feed.url,
           error: meta?.error,
-          numberOfArticles: meta?.numberOfArticles,
         }
       );
     }

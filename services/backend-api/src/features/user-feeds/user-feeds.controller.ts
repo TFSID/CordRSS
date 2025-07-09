@@ -9,7 +9,6 @@ import {
   Param,
   Patch,
   Post,
-  Query,
   Res,
   UseFilters,
   UseGuards,
@@ -20,15 +19,15 @@ import { NestedFieldPipe } from "../../common/pipes/nested-field.pipe";
 import { TransformValidationPipe } from "../../common/pipes/TransformValidationPipe";
 import { DiscordAccessToken } from "../discord-auth/decorators/DiscordAccessToken";
 import { DiscordOAuth2Guard } from "../discord-auth/guards/DiscordOAuth2.guard";
-import { FastifyReply, FastifyRequest } from "fastify";
+import { FastifyReply } from "fastify";
 import { SessionAccessToken } from "../discord-auth/types/SessionAccessToken.type";
 
-import { ADD_DISCORD_CHANNEL_CONNECTION_ERROR_CODES } from "../feed-connections/filters";
+import { AddDiscordChannelConnectionFilter } from "../feed-connections/filters";
 import {
-  FEED_EXCEPTION_FILTER_ERROR_CODES,
   FeedExceptionFilter,
   UpdateUserFeedsExceptionFilter,
 } from "../feeds/filters";
+import { SupportersService } from "../supporters/supporters.service";
 import { UserFeedManagerType } from "../user-feed-management-invites/constants";
 import {
   CreateUserFeedCloneInput,
@@ -39,6 +38,7 @@ import {
   GetUserFeedDailyLimitOutputDto,
   GetUserFeedDeliveryLogsInputDto,
   GetUserFeedOutputDto,
+  GetUserFeedRequestsInputDto,
   GetUserFeedsInputDto,
   GetUserFeedsOutputDto,
   UpdateUserFeedInputDto,
@@ -55,87 +55,40 @@ import {
 } from "./exceptions";
 import {
   GetUserFeedArticlesExceptionFilter,
-  RETRY_USER_FEED_ERROR_CODES,
+  RetryUserFeedFilter,
 } from "./filters";
 import { RestoreLegacyUserFeedExceptionFilter } from "./filters/restore-legacy-user-feed-exception.filter";
 import { GetUserFeedsPipe, GetUserFeedsPipeOutput } from "./pipes";
 import { GetFeedArticlePropertiesInput, GetFeedArticlesInput } from "./types";
 import { UserFeedsService } from "./user-feeds.service";
-import { CopyUserFeedSettingsInputDto } from "./dto/copy-user-feed-settings-input.dto";
-import { createMultipleExceptionsFilter } from "../../common/filters/multiple-exceptions.filter";
-import { CreateUserFeedUrlValidationInputDto } from "./dto/create-user-feed-url-validation-input.dto";
-import { UserFeedTargetFeedSelectionType } from "./constants/target-feed-selection-type.type";
-import { UsersService } from "../users/users.service";
 
 @Controller("user-feeds")
 @UseGuards(DiscordOAuth2Guard)
 export class UserFeedsController {
   constructor(
     private readonly userFeedsService: UserFeedsService,
-    private readonly usersService: UsersService
+    private readonly supportersService: SupportersService
   ) {}
 
   @Post()
   @UseFilters(FeedExceptionFilter)
   async createFeed(
     @Body(ValidationPipe)
-    dto: CreateUserFeedInputDto,
+    { title, url }: CreateUserFeedInputDto,
     @DiscordAccessToken()
-    {
-      discord: { id: discordUserId },
-      access_token: userAccessToken,
-    }: SessionAccessToken
+    { discord: { id: discordUserId } }: SessionAccessToken
   ): Promise<GetUserFeedOutputDto> {
     const result = await this.userFeedsService.addFeed(
       {
         discordUserId,
-        userAccessToken,
-      },
-      dto
-    );
-
-    return this.userFeedsService.formatForHttpResponse(result, discordUserId);
-  }
-
-  @Post("deduplicate-feed-urls")
-  async deduplicateFeedUrls(
-    @Body(ValidationPipe)
-    { urls }: { urls: string[] },
-    @DiscordAccessToken()
-    { discord: { id: discordUserId } }: SessionAccessToken
-  ) {
-    const deduplicated = await this.userFeedsService.deduplicateFeedUrls(
-      discordUserId,
-      urls
-    );
-
-    return {
-      result: {
-        urls: deduplicated,
-      },
-    };
-  }
-
-  @Post("url-validation")
-  @UseFilters(FeedExceptionFilter)
-  async createFeedUrlValidation(
-    @Body(ValidationPipe)
-    { url }: CreateUserFeedUrlValidationInputDto,
-    @DiscordAccessToken()
-    { discord: { id: discordUserId } }: SessionAccessToken
-  ) {
-    const result = await this.userFeedsService.validateFeedUrl(
-      {
-        discordUserId,
       },
       {
+        title,
         url,
       }
     );
 
-    return {
-      result,
-    };
+    return this.userFeedsService.formatForHttpResponse(result, discordUserId);
   }
 
   @Patch()
@@ -184,12 +137,7 @@ export class UserFeedsController {
 
   @Get("/:feedId")
   async getFeed(
-    @Param(
-      "feedId",
-      GetUserFeedsPipe({
-        include: ["tags"],
-      })
-    )
+    @Param("feedId", GetUserFeedsPipe())
     [{ feed }]: GetUserFeedsPipeOutput,
     @DiscordAccessToken()
     { discord: { id: discordUserId } }: SessionAccessToken
@@ -201,12 +149,7 @@ export class UserFeedsController {
   }
 
   @Post("/:feedId/clone")
-  @UseFilters(
-    createMultipleExceptionsFilter(
-      FEED_EXCEPTION_FILTER_ERROR_CODES,
-      ADD_DISCORD_CHANNEL_CONNECTION_ERROR_CODES
-    )
-  )
+  @UseFilters(FeedExceptionFilter, AddDiscordChannelConnectionFilter)
   async createFeedClone(
     @Param("feedId", GetUserFeedsPipe())
     [{ feed }]: GetUserFeedsPipeOutput,
@@ -255,11 +198,13 @@ export class UserFeedsController {
   async getFeedRequests(
     @Param("feed", GetUserFeedsPipe())
     [{ feed }]: GetUserFeedsPipeOutput,
-    @Query() query: FastifyRequest["query"]
+    @NestedQuery(TransformValidationPipe)
+    { limit, skip }: GetUserFeedRequestsInputDto
   ) {
     return this.userFeedsService.getFeedRequests({
       url: feed.url,
-      query: query as Record<string, string>,
+      limit,
+      skip,
       feed,
     });
   }
@@ -368,12 +313,7 @@ export class UserFeedsController {
   }
 
   @Post("/:feedId/manual-request")
-  @UseFilters(
-    createMultipleExceptionsFilter(
-      RETRY_USER_FEED_ERROR_CODES,
-      FEED_EXCEPTION_FILTER_ERROR_CODES
-    )
-  )
+  @UseFilters(RetryUserFeedFilter, FeedExceptionFilter)
   async createManualRequest(
     @Res() res: FastifyReply,
     @Param("feedId", GetUserFeedsPipe())
@@ -459,34 +399,6 @@ export class UserFeedsController {
     return this.userFeedsService.formatForHttpResponse(updated, discordUserId);
   }
 
-  @Post("/:feedId/copy-settings")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async copyFeedSettings(
-    @DiscordAccessToken()
-    { discord: { id: discordUserId } }: SessionAccessToken,
-    @Param("feedId", GetUserFeedsPipe())
-    [{ feed }]: GetUserFeedsPipeOutput,
-    @Body(ValidationPipe)
-    dto: CopyUserFeedSettingsInputDto
-  ) {
-    if (
-      (!dto.targetFeedSelectionType ||
-        dto.targetFeedSelectionType ===
-          UserFeedTargetFeedSelectionType.Selected) &&
-      !dto.targetFeedIds
-    ) {
-      throw new BadRequestException(
-        "Target feed selection type is required when no target feed IDs are provided"
-      );
-    }
-
-    await this.userFeedsService.copySettings({
-      sourceFeed: feed,
-      dto,
-      discordUserId,
-    });
-  }
-
   @Post("/:feedId/restore-to-legacy")
   @UseFilters(RestoreLegacyUserFeedExceptionFilter)
   async restoreToLegacy(
@@ -513,12 +425,9 @@ export class UserFeedsController {
     @NestedQuery(TransformValidationPipe)
     dto: GetUserFeedsInputDto
   ): Promise<GetUserFeedsOutputDto> {
-    const { _id: userId } = await this.usersService.getOrCreateUserByDiscordId(
-      discordUserId
-    );
     const [feeds, count] = await Promise.all([
-      this.userFeedsService.getFeedsByUser(userId, discordUserId, dto),
-      this.userFeedsService.getFeedCountByUser(userId, discordUserId, dto),
+      this.userFeedsService.getFeedsByUser(discordUserId, dto),
+      this.userFeedsService.getFeedCountByUser(discordUserId, dto),
     ]);
 
     return {

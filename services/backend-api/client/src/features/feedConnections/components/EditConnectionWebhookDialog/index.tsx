@@ -28,10 +28,8 @@ import {
   DiscordServerSearchSelectv2,
   GetDiscordChannelType,
 } from "../../../discordServers";
-import { InlineErrorAlert, InlineErrorIncompleteFormAlert } from "../../../../components";
-import { usePageAlertContext } from "../../../../contexts/PageAlertContext";
-import { useUpdateDiscordChannelConnection } from "../../hooks";
-import { useUserFeedContext } from "../../../../contexts/UserFeedContext";
+import { notifySuccess } from "../../../../utils/notifySuccess";
+import { InlineErrorAlert } from "../../../../components";
 
 const formSchema = object({
   name: string().optional(),
@@ -48,70 +46,58 @@ type FormData = InferType<typeof formSchema>;
 
 interface Props {
   defaultValues?: Required<FormData>;
+  onUpdate: (data: FormData) => Promise<void>;
   isOpen: boolean;
   onClose: () => void;
   onCloseRef: React.RefObject<HTMLButtonElement>;
   excludeName?: boolean;
   title?: string;
-  connectionId: string;
 }
 
 export const EditConnectionWebhookDialog: React.FC<Props> = ({
   defaultValues,
+  onUpdate,
   isOpen,
   onClose,
   onCloseRef,
   excludeName,
   title,
-  connectionId,
 }) => {
   const { t } = useTranslation();
   const {
     handleSubmit,
     control,
     reset,
-    formState: { isSubmitting, errors, isSubmitted, isValid },
+    formState: { isSubmitting, errors },
     watch,
   } = useForm<FormData>({
     resolver: yupResolver(formSchema),
     defaultValues,
   });
-  const { userFeed } = useUserFeedContext();
   const [serverId, channelId] = watch(["serverId", "applicationWebhook.channelId"]);
   const { data: discordUser, status: discordUserStatus } = useDiscordUserMe();
   const initialRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
-  const { createSuccessAlert, createErrorAlert } = usePageAlertContext();
-  const { mutateAsync } = useUpdateDiscordChannelConnection();
 
   const onSubmit = async (formData: FormData) => {
-    const { name, applicationWebhook } = formData;
+    const { name, serverId: inputServerId, applicationWebhook } = formData;
 
     try {
-      await mutateAsync({
-        feedId: userFeed.id,
-        connectionId,
-        details: {
-          name,
-          applicationWebhook: {
-            name: applicationWebhook.name,
-            channelId: applicationWebhook.channelId,
-            iconUrl: applicationWebhook.iconUrl,
-            threadId: applicationWebhook.threadId,
-          },
+      await onUpdate({
+        name,
+        serverId: inputServerId,
+        applicationWebhook: {
+          name: applicationWebhook.name,
+          channelId: applicationWebhook.channelId,
+          iconUrl: applicationWebhook.iconUrl,
+          threadId: applicationWebhook.threadId,
         },
       });
-
       onClose();
       reset(formData);
-      createSuccessAlert({
-        title: "Successfully updated connection.",
-      });
+      notifySuccess(t("common.success.savedChanges"));
     } catch (err) {
-      createErrorAlert({
-        title: "Failed to update connection.",
-        description: (err as Error).message,
-      });
+      setError((err as Error).message);
     }
   };
 
@@ -121,7 +107,6 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
   }, [isOpen]);
 
   const webhooksDisabled = discordUserStatus !== "success" || !discordUser?.supporter;
-  const formErrorCount = Object.keys(errors).length;
 
   return (
     <Modal
@@ -177,9 +162,12 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
                     </FormHelperText>
                   </FormControl>
                 )}
-                <FormControl isInvalid={!!errors.serverId} isRequired>
-                  <FormLabel htmlFor="server-select" id="server-select-label">
-                    Discord Server
+                <FormControl isInvalid={!!errors.serverId}>
+                  <FormLabel>
+                    {t(
+                      "features.feed.components" +
+                        ".addDiscordWebhookConnectionDialog.formServerLabel"
+                    )}
                   </FormLabel>
                   <Controller
                     name="serverId"
@@ -189,64 +177,49 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
                         onChange={(id) => field.onChange(id)}
                         value={field.value || ""}
                         isDisabled={isSubmitting}
-                        alertOnArticleEligibility
-                        inputId="server-select"
-                        isInvalid={!!errors.serverId}
-                        ariaLabelledBy="server-select-label"
                       />
                     )}
                   />
+                  {errors.serverId && (
+                    <FormErrorMessage>{errors.serverId.message}</FormErrorMessage>
+                  )}
                   <FormHelperText>
                     Only servers where you have server-wide Manage Channels permission will appear.
                     If you don&apos;t have this permission, you may ask someone who does to add the
                     feed and share it with you.
                   </FormHelperText>
-                  {errors.serverId && (
-                    <FormErrorMessage>{errors.serverId.message}</FormErrorMessage>
-                  )}
                 </FormControl>
                 <FormControl isInvalid={!!errors.applicationWebhook?.channelId} isRequired>
-                  <FormLabel id="channel-select-label" htmlFor="channel-select">
-                    Discord Channel
-                  </FormLabel>
+                  <FormLabel>Channel</FormLabel>
                   <Controller
                     name="applicationWebhook.channelId"
                     control={control}
                     render={({ field }) => (
                       <DiscordChannelDropdown
                         value={field.value || ""}
-                        isInvalid={!!errors.applicationWebhook?.channelId}
                         onChange={(value) => {
                           field.onChange(value);
                         }}
-                        types={[
-                          GetDiscordChannelType.Text,
-                          GetDiscordChannelType.Forum,
-                          GetDiscordChannelType.Announcement,
-                        ]}
+                        include={[GetDiscordChannelType.Forum]}
                         onBlur={field.onBlur}
                         isDisabled={isSubmitting}
                         serverId={serverId}
-                        inputId="channel-select"
-                        ariaLabelledBy="channel-select-label"
                       />
                     )}
                   />
-                  <FormErrorMessage>
-                    {errors.applicationWebhook?.channelId?.message}
-                  </FormErrorMessage>
+                  {errors.applicationWebhook?.channelId && (
+                    <FormErrorMessage>
+                      {errors.applicationWebhook?.channelId?.message}
+                    </FormErrorMessage>
+                  )}
                 </FormControl>
                 <FormControl isInvalid={!!errors.applicationWebhook?.threadId}>
-                  <FormLabel htmlFor="thread-select" id="thread-label">
-                    Forum Thread
-                  </FormLabel>
+                  <FormLabel>Forum Thread</FormLabel>
                   <Controller
                     name="applicationWebhook.threadId"
                     control={control}
                     render={({ field }) => (
                       <DiscordActiveThreadDropdown
-                        ariaLabelledBy="thread-label"
-                        isInvalid={!!errors.applicationWebhook?.threadId}
                         value={field.value || ""}
                         onChange={(value) => {
                           field.onChange(value);
@@ -256,19 +229,20 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
                         serverId={serverId}
                         isClearable
                         parentChannelId={channelId}
-                        inputId="thread-select"
                       />
                     )}
                   />
+                  {errors.applicationWebhook?.threadId && (
+                    <FormErrorMessage>
+                      {errors.applicationWebhook?.threadId?.message}
+                    </FormErrorMessage>
+                  )}
                   {!errors.applicationWebhook?.threadId && (
                     <FormHelperText>
                       If specified, all messages will go into a specific thread. Only unlocked
                       (unarchived) threads are listed.
                     </FormHelperText>
                   )}
-                  <FormErrorMessage>
-                    {errors.applicationWebhook?.threadId?.message}
-                  </FormErrorMessage>
                 </FormControl>
                 <FormControl isRequired isInvalid={!!errors.applicationWebhook?.name}>
                   <FormLabel>
@@ -296,7 +270,6 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
                         ".webhookNameDescription"
                     )}
                   </FormHelperText>
-                  <FormErrorMessage>{errors.applicationWebhook?.name?.message}</FormErrorMessage>
                 </FormControl>
                 <FormControl isInvalid={!!errors.applicationWebhook?.iconUrl}>
                   <FormLabel>
@@ -315,7 +288,6 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
                         isDisabled={isSubmitting}
                         value={field.value || ""}
                         bg="gray.800"
-                        type="url"
                       />
                     )}
                   />
@@ -325,13 +297,9 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
                         ".webhookIconUrlDescription"
                     )}
                   </FormHelperText>
-                  <FormErrorMessage>{errors.applicationWebhook?.iconUrl?.message}</FormErrorMessage>
                 </FormControl>
                 {error && (
                   <InlineErrorAlert title={t("common.errors.failedToSave")} description={error} />
-                )}
-                {isSubmitted && !formErrorCount && (
-                  <InlineErrorIncompleteFormAlert fieldCount={formErrorCount} />
                 )}
               </Stack>
             )}
@@ -341,12 +309,7 @@ export const EditConnectionWebhookDialog: React.FC<Props> = ({
               <Button onClick={onClose} variant="ghost" isDisabled={isSubmitting}>
                 <span>{t("common.buttons.cancel")}</span>
               </Button>
-              <Button
-                type="submit"
-                colorScheme="blue"
-                isLoading={isSubmitting}
-                aria-disabled={!isValid || isSubmitting}
-              >
+              <Button type="submit" colorScheme="blue" isLoading={isSubmitting}>
                 <span>{t("common.buttons.save")}</span>
               </Button>
             </HStack>

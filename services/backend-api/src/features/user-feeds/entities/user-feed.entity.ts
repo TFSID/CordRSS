@@ -189,20 +189,7 @@ UserFeedSchema.index({
   refreshRateSeconds: 1,
 });
 
-// For looking up feeds with specific URLs when refreshing user external credentials
-UserFeedSchema.index({
-  "user.discordUserId": 1,
-});
-
 export const UserFeedFeature: ModelDefinition = {
   name: UserFeed.name,
   schema: UserFeedSchema,
-};
-
-export type UserFeedWithTags = UserFeed & {
-  userTags?: {
-    _id: Types.ObjectId;
-    label: string;
-    color: string;
-  }[];
 };

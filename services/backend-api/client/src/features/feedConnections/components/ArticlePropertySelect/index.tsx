@@ -12,11 +12,6 @@ interface Props {
   onChange: (value: string) => void;
   value?: string;
   placeholder?: string;
-  isInvalid: boolean;
-  ariaLabelledBy: string;
-  inputId: string;
-  isRequired?: boolean;
-  tabIndex?: number;
 }
 
 export const ArticlePropertySelect = ({
@@ -25,11 +20,6 @@ export const ArticlePropertySelect = ({
   value,
   onChange,
   placeholder,
-  ariaLabelledBy,
-  inputId,
-  isInvalid,
-  isRequired,
-  tabIndex,
 }: Props) => {
   const {
     userFeed: { id: feedId },
@@ -44,7 +34,7 @@ export const ArticlePropertySelect = ({
   const { t } = useTranslation();
 
   return (
-    <Stack onKeyDown={(e) => e.stopPropagation()}>
+    <Stack>
       <ThemedSelect
         isDisabled={fetchStatus === "fetching" || !!error}
         loading={fetchStatus === "fetching"}
@@ -59,13 +49,6 @@ export const ArticlePropertySelect = ({
         onChange={onChange}
         value={value}
         placeholder={placeholder}
-        isInvalid={isInvalid}
-        selectProps={{
-          inputId,
-          "aria-labelledby": ariaLabelledBy,
-          required: isRequired,
-          tabIndex,
-        }}
       />
       {error && (
         <InlineErrorAlert

@@ -8,10 +8,7 @@ import { UserFeed, UserFeedModel } from "../user-feeds/entities";
 import { AmqpConnection } from "@golevelup/nestjs-rabbitmq";
 
 import { MessageBrokerQueue } from "../../common/constants/message-broker-queue.constants";
-import {
-  UserFeedBulkWriteDocument,
-  UserFeedsService,
-} from "../user-feeds/user-feeds.service";
+import { UserFeedsService } from "../user-feeds/user-feeds.service";
 import { getCommonFeedAggregateStages } from "../../common/utils";
 import getFeedRequestLookupDetails from "../../utils/get-feed-request-lookup-details";
 import { User, UserModel } from "../users/entities/user.entity";
@@ -40,7 +37,11 @@ export class ScheduleHandlerService {
     rateSeconds: number;
     data: Array<{ url: string }>;
   }) {
-    this.amqpConnection.publish(
+    this.amqpConnection.publish<{
+      rateSeconds: number;
+      timestamp: number;
+      data: Array<{ url: string; saveToObjectStorage?: boolean }>;
+    }>(
       "",
       MessageBrokerQueue.UrlFetchBatch,
       { ...data, timestamp: Date.now() },
@@ -63,16 +64,9 @@ export class ScheduleHandlerService {
     const allBenefits =
       await this.supportersService.getBenefitsOfAllDiscordUsers();
 
-    const syncRefreshRateWriteDocs =
-      this.getSyncRefreshRatesWriteDocs(allBenefits);
-    const syncArticlesWriteDocs =
-      this.getSyncMaxDailyArticlesWriteDocs(allBenefits);
+    await this.syncRefreshRates(allBenefits);
+    await this.syncMaxDailyArticles(allBenefits);
     await this.usersService.syncLookupKeys();
-
-    await this.userFeedModel.bulkWrite([
-      ...syncRefreshRateWriteDocs,
-      ...syncArticlesWriteDocs,
-    ]);
 
     const feedsToDebug = await this.userFeedModel
       .find({
@@ -98,12 +92,6 @@ export class ScheduleHandlerService {
       if (!url) {
         // Just in case
         continue;
-      }
-
-      if (urlsToDebug.has(url)) {
-        logger.info(
-          `DEBUG: Schedule handler pushing url ${url} for ${refreshRateSeconds}s refresh rate`
-        );
       }
 
       urlBatch.push({
@@ -173,9 +161,7 @@ export class ScheduleHandlerService {
       },
     });
 
-    return this.userFeedModel.aggregate(pipeline, {
-      readPreference: "secondaryPreferred",
-    });
+    return this.userFeedModel.aggregate(pipeline);
   }
 
   getUnbatchedUrlsQueryMatchingRefreshRate(refreshRateSeconds: number) {
@@ -192,11 +178,8 @@ export class ScheduleHandlerService {
       },
     });
 
-    return this.userFeedModel.aggregate(pipeline, {
-      readPreference: "secondaryPreferred",
-    });
+    return this.userFeedModel.aggregate(pipeline);
   }
-
   async getValidDiscordUserSupporters() {
     const allBenefits =
       await this.supportersService.getBenefitsOfAllDiscordUsers();
@@ -208,7 +191,7 @@ export class ScheduleHandlerService {
     const benefits =
       await this.supportersService.getBenefitsOfAllDiscordUsers();
 
-    await this.userFeedsService.enforceAllUserFeedLimits(
+    await this.userFeedsService.enforceUserFeedLimits(
       benefits.map(({ discordUserId, maxUserFeeds, refreshRateSeconds }) => ({
         discordUserId,
         maxUserFeeds,
@@ -217,11 +200,11 @@ export class ScheduleHandlerService {
     );
   }
 
-  getSyncRefreshRatesWriteDocs(
+  async syncRefreshRates(
     benefits: Awaited<
       ReturnType<typeof this.supportersService.getBenefitsOfAllDiscordUsers>
     >
-  ): UserFeedBulkWriteDocument[] {
+  ) {
     const validSupporters = benefits.filter(({ isSupporter }) => isSupporter);
 
     const supportersByRefreshRates = new Map<number, string[]>();
@@ -241,12 +224,12 @@ export class ScheduleHandlerService {
 
     const refreshRates = Array.from(supportersByRefreshRates.entries());
 
-    const specialDiscordUserIds: string[] = refreshRates.flatMap((d) => d[1]);
+    const specialDiscordUserIds: string[] = [];
 
-    return [
-      ...refreshRates.map(([refreshRateSeconds, discordUserIds]) => ({
-        updateMany: {
-          filter: {
+    await Promise.all(
+      refreshRates.map(async ([refreshRateSeconds, discordUserIds]) => {
+        await this.userFeedModel.updateMany(
+          {
             "user.discordUserId": {
               $in: discordUserIds,
             },
@@ -254,38 +237,39 @@ export class ScheduleHandlerService {
               $ne: refreshRateSeconds,
             },
           },
-          update: {
+          {
             $set: {
               refreshRateSeconds,
             },
-          },
-        },
-      })),
+          }
+        );
+
+        specialDiscordUserIds.push(...discordUserIds);
+      })
+    );
+
+    await this.userFeedModel.updateMany(
       {
-        updateMany: {
-          filter: {
-            "user.discordUserId": {
-              $nin: specialDiscordUserIds,
-            },
-            refreshRateSeconds: {
-              $ne: this.defaultRefreshRateSeconds,
-            },
-          },
-          update: {
-            $set: {
-              refreshRateSeconds: this.defaultRefreshRateSeconds,
-            },
-          },
+        "user.discordUserId": {
+          $nin: specialDiscordUserIds,
+        },
+        refreshRateSeconds: {
+          $ne: this.defaultRefreshRateSeconds,
         },
       },
-    ];
+      {
+        $set: {
+          refreshRateSeconds: this.defaultRefreshRateSeconds,
+        },
+      }
+    );
   }
 
-  getSyncMaxDailyArticlesWriteDocs(
+  async syncMaxDailyArticles(
     benefits: Awaited<
       ReturnType<typeof this.supportersService.getBenefitsOfAllDiscordUsers>
     >
-  ): UserFeedBulkWriteDocument[] {
+  ) {
     const validSupporters = benefits.filter(({ isSupporter }) => isSupporter);
 
     const supportersByMaxDailyArticles = new Map<number, string[]>();
@@ -305,14 +289,12 @@ export class ScheduleHandlerService {
 
     const maxDailyArticles = Array.from(supportersByMaxDailyArticles.entries());
 
-    const specialDiscordUserIds: string[] = maxDailyArticles.flatMap(
-      (d) => d[1]
-    );
+    const specialDiscordUserIds: string[] = [];
 
-    return [
-      ...maxDailyArticles.map(([maxDailyArticles, discordUserIds]) => ({
-        updateMany: {
-          filter: {
+    await Promise.all(
+      maxDailyArticles.map(async ([maxDailyArticles, discordUserIds]) => {
+        await this.userFeedModel.updateMany(
+          {
             "user.discordUserId": {
               $in: discordUserIds,
             },
@@ -320,30 +302,31 @@ export class ScheduleHandlerService {
               $ne: maxDailyArticles,
             },
           },
-          update: {
+          {
             $set: {
               maxDailyArticles,
             },
-          },
-        },
-      })),
+          }
+        );
+
+        specialDiscordUserIds.push(...discordUserIds);
+      })
+    );
+
+    await this.userFeedModel.updateMany(
       {
-        updateMany: {
-          filter: {
-            "user.discordUserId": {
-              $nin: specialDiscordUserIds,
-            },
-            maxDailyArticles: {
-              $ne: this.supportersService.maxDailyArticlesDefault,
-            },
-          },
-          update: {
-            $set: {
-              maxDailyArticles: this.supportersService.maxDailyArticlesDefault,
-            },
-          },
+        "user.discordUserId": {
+          $nin: specialDiscordUserIds,
+        },
+        maxDailyArticles: {
+          $ne: this.supportersService.maxDailyArticlesDefault,
         },
       },
-    ];
+      {
+        $set: {
+          maxDailyArticles: this.supportersService.maxDailyArticlesDefault,
+        },
+      }
+    );
   }
 }

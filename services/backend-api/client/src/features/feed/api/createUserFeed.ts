@@ -4,9 +4,8 @@ import { UserFeedSchema } from "../types";
 
 export interface CreateUserFeedInput {
   details: {
-    title?: string;
+    title: string;
     url: string;
-    sourceFeedId?: string;
   };
 }
 

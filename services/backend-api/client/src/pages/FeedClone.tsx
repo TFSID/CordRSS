@@ -154,7 +154,6 @@ const FeedClone: React.FC = () => {
           <Stack spacing={3}>
             <Heading size="md">{t("pages.cloneFeed.targetFeedSectionTitle")}</Heading>
             <ThemedSelect
-              isInvalid={false}
               onChange={onFeedSelected}
               loading={loadingFeeds}
               onInputChange={onInputChange}
@@ -170,7 +169,7 @@ const FeedClone: React.FC = () => {
             isDisabled={!selectedFeedId || !properties.length || loadingFeeds || saving}
             colorScheme="blue"
           >
-            <span>{t("pages.cloneFeed.cloneButtonLabel")}</span>
+            {t("pages.cloneFeed.cloneButtonLabel")}
           </Button>
         </HStack>
       </Stack>

@@ -1,7 +1,9 @@
 import {
   Box,
   Button,
-  Flex,
+  Divider,
+  HStack,
+  Heading,
   Link,
   Modal,
   ModalBody,
@@ -11,14 +13,8 @@ import {
   ModalHeader,
   ModalOverlay,
   Skeleton,
-  Spinner,
   Stack,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
   Text,
-  Tr,
 } from "@chakra-ui/react";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -87,10 +83,6 @@ export const ChangeSubscriptionDialog = ({
       return;
     }
 
-    if ((!isChangingToFree && !data) || createStatus === "loading" || cancelStatus === "loading") {
-      return;
-    }
-
     try {
       if (isChangingToFree) {
         await cancelSubscription();
@@ -109,8 +101,6 @@ export const ChangeSubscriptionDialog = ({
     }
   };
 
-  const isLoading = !data && !isChangingToFree;
-
   return (
     <Modal
       isOpen={isOpen}
@@ -128,13 +118,13 @@ export const ChangeSubscriptionDialog = ({
         <ModalHeader>Confirm Subscription Changes</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
-          {isLoading && (
-            <Flex justifyContent="center" m={6}>
+          {/* {!isChangingToFree && status === "loading" && (
+            <Center>
               <Spinner />
-            </Flex>
-          )}
+            </Center>
+          )} */}
           {error && <InlineErrorAlert title="Failed to get preview" description={error.message} />}
-          {!isLoading && isChangingToFree && (
+          {isChangingToFree && (
             <Stack>
               <Text>
                 Are you sure you want to cancel by downgrading to Free? You will retain your current
@@ -149,165 +139,133 @@ export const ChangeSubscriptionDialog = ({
               </Text>
             </Stack>
           )}
-          <Box aria-live="polite" aria-atomic="true">
-            {!isLoading && !isChangingToFree && (
-              <Stack>
-                <Stack spacing={8}>
-                  <Stack>
-                    <Box>
-                      <Text>{product?.name}</Text>
-                      {!data && <Skeleton width={64} height={12} mt={2} />}
-                      {data && price && (
-                        <Text fontSize="xx-large" fontWeight={700}>
-                          {price?.formattedPrice}/{price?.interval}
-                        </Text>
-                      )}
-                      {!data && <Skeleton width={64} height={6} mt={2} />}
-                      {data && (
-                        <Text color="whiteAlpha.700">
-                          {new Date(
-                            data.data.immediateTransaction.billingPeriod.startsAt
-                          ).toLocaleDateString(undefined, {
-                            month: "long",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                          {" - "}
-                          {new Date(
-                            data.data.immediateTransaction.billingPeriod.endsAt
-                          ).toLocaleDateString(undefined, {
-                            month: "long",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </Text>
-                      )}
-                    </Box>
-                  </Stack>
-                  <TableContainer pt={4} tabIndex={-1}>
-                    <Table variant="unstyled">
-                      <Tbody>
-                        <Tr>
-                          <Td padding={0}>
-                            <Text>Subtotal</Text>
-                            <Text color="whiteAlpha.700" fontSize={14}>
-                              for remaining time on new plan
-                            </Text>
-                          </Td>
-                          <Td textAlign="right" p={0}>
-                            <Flex justifyContent="flex-end">
-                              {!data && <Skeleton width={16} height={6} />}
-                              {data && (
-                                <Text>{data.data.immediateTransaction.subtotalFormatted}</Text>
-                              )}
-                            </Flex>
-                          </Td>
-                        </Tr>
-                        <Tr>
-                          <Td pt={4} pl={0} pr={0} pb={0}>
-                            <Text>Tax</Text>
-                            <Text color="whiteAlpha.700" fontSize={14}>
-                              Included in plan price
-                            </Text>
-                          </Td>
-                          <Td textAlign="right" p={0}>
-                            <Flex justifyContent="flex-end">
-                              {!data && <Skeleton width={16} height={6} />}
-                              {data && <Text>{data.data.immediateTransaction.taxFormatted}</Text>}
-                            </Flex>
-                          </Td>
-                        </Tr>
-                        <Tr>
-                          <Td pt={4} pl={0} pr={0} pb={0}>
-                            <Text>Total</Text>
-                          </Td>
-                          <Td textAlign="right" p={0}>
-                            <Flex justifyContent="flex-end">
-                              {!data && <Skeleton width={16} height={6} />}
-                              {data && <Text>{data.data.immediateTransaction.totalFormatted}</Text>}
-                            </Flex>
-                          </Td>
-                        </Tr>
-                        {data && data.data.immediateTransaction.credit !== "0" && (
-                          <Tr>
-                            <Td pt={4} pl={0} pr={0} pb={0}>
-                              <Text>Credit</Text>
-                              <Text color="whiteAlpha.700" fontSize={14}>
-                                Includes refund for time remaining on current plan
-                              </Text>
-                            </Td>
-                            <Td p={0} textAlign="right">
-                              <Flex justifyContent="flex-end">
-                                {!data && <Skeleton width={16} height={6} />}
-                                {data && (
-                                  <Text color="green.200">
-                                    -{data.data.immediateTransaction.creditFormatted}
-                                  </Text>
-                                )}
-                              </Flex>
-                            </Td>
-                          </Tr>
-                        )}
-                        <Tr>
-                          <Td pt={8} pl={0} pr={0} pb={0}>
-                            <Text fontWeight="bold">Due Today</Text>
-                          </Td>
-                          <Td textAlign="right" pt={8} pl={0} pr={0} pb={0}>
-                            <Flex justifyContent="flex-end">
-                              {!data && <Skeleton width={16} height={6} />}
-                              {data && (
-                                <Text fontWeight="bold">
-                                  {data.data.immediateTransaction.grandTotalFormatted}
-                                </Text>
-                              )}
-                            </Flex>
-                          </Td>
-                        </Tr>
-                      </Tbody>
-                    </Table>
-                  </TableContainer>
+          {!isChangingToFree && (
+            <Stack spacing={8}>
+              <Stack spacing={8}>
+                <Stack>
+                  <Box>
+                    <Text>{product?.name}</Text>
+                    {!data && <Skeleton width={64} height={12} mt={2} />}
+                    {data && price && (
+                      <Heading size="lg">
+                        {price?.formattedPrice}/{price?.interval}
+                      </Heading>
+                    )}
+                    {!data && <Skeleton width={64} height={6} mt={2} />}
+                    {data && (
+                      <Text color="whiteAlpha.700">
+                        {new Date(
+                          data.data.immediateTransaction.billingPeriod.startsAt
+                        ).toLocaleDateString(undefined, {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                        {" - "}
+                        {new Date(
+                          data.data.immediateTransaction.billingPeriod.endsAt
+                        ).toLocaleDateString(undefined, {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </Text>
+                    )}
+                  </Box>
                 </Stack>
-                <Text color="whiteAlpha.700" pt={4}>
-                  By proceeding, you are agreeing to our{" "}
-                  <Link target="_blank" href="https://monitorss.xyz/terms" color="blue.300">
-                    terms and conditions
-                  </Link>{" "}
-                  and{" "}
-                  <Link
-                    target="_blank"
-                    color="blue.300"
-                    href="https://monitorss.xyz/privacy-policy"
-                  >
-                    privacy policy
-                  </Link>
-                  .
-                </Text>
+                <Divider />
+                <Stack>
+                  <HStack justifyContent="space-between">
+                    <Box>
+                      <Text>Subtotal</Text>
+                      <Text color="whiteAlpha.700" fontSize={14}>
+                        for remaining time on new plan
+                      </Text>
+                    </Box>
+                    {!data && <Skeleton width={16} height={6} />}
+                    {data && <Text>{data.data.immediateTransaction.subtotalFormatted}</Text>}
+                  </HStack>
+                  <HStack justifyContent="space-between">
+                    <Box>
+                      <Text>Tax</Text>
+                      <Text color="whiteAlpha.700" fontSize={14}>
+                        Included in plan price
+                      </Text>
+                    </Box>
+                    {!data && <Skeleton width={16} height={6} />}
+                    {data && <Text>{data.data.immediateTransaction.taxFormatted}</Text>}
+                  </HStack>
+                  <HStack justifyContent="space-between">
+                    <Box>
+                      <Text>Total</Text>
+                    </Box>
+                    {!data && <Skeleton width={16} height={6} />}
+                    {data && <Text>{data.data.immediateTransaction.totalFormatted}</Text>}
+                  </HStack>
+                  {data && data.data.immediateTransaction.credit !== "0" && (
+                    <HStack justifyContent="space-between">
+                      <Box>
+                        <Text>Credit</Text>
+                        <Text color="whiteAlpha.700" fontSize={14}>
+                          Includes refund for time remaining on current plan
+                        </Text>
+                      </Box>
+                      {!data && <Skeleton width={16} height={6} />}
+                      {data && (
+                        <Text color="green.200">
+                          -{data.data.immediateTransaction.creditFormatted}
+                        </Text>
+                      )}
+                    </HStack>
+                  )}
+                  <Divider my={4} />
+                  <HStack justifyContent="space-between">
+                    <Text fontWeight="semibold">Due Today</Text>
+                    {!data && <Skeleton width={16} height={6} />}
+                    {data && (
+                      <Text fontWeight="bold">
+                        {data.data.immediateTransaction.grandTotalFormatted}
+                      </Text>
+                    )}
+                  </HStack>
+                </Stack>
               </Stack>
-            )}
-          </Box>
+              <Text color="whiteAlpha.700">
+                By proceeding, you are agreeing to our{" "}
+                <Link target="_blank" href="https://monitorss.xyz/terms" color="blue.300">
+                  terms and conditions
+                </Link>{" "}
+                and{" "}
+                <Link target="_blank" color="blue.300" href="https://monitorss.xyz/privacy-policy">
+                  privacy policy
+                </Link>
+                .
+              </Text>
+            </Stack>
+          )}
         </ModalBody>
         <ModalFooter>
-          {!isLoading && (
-            <>
-              <Button variant="ghost" mr={3} onClick={() => onClose(true)} ref={initialRef}>
-                <span>Cancel</span>
-              </Button>
-              <Button
-                colorScheme={!isDowngrade ? "blue" : "red"}
-                onClick={onConfirm}
-                aria-disabled={
-                  (!isChangingToFree && !data) ||
-                  createStatus === "loading" ||
-                  cancelStatus === "loading"
-                }
-              >
-                <span>
-                  {!isDowngrade && "Confirm Payment"}
-                  {isDowngrade && "Confirm Downgrade"}
-                </span>
-              </Button>
-            </>
-          )}
+          <Button variant="ghost" mr={3} onClick={() => onClose(true)} ref={initialRef}>
+            <span>Cancel</span>
+          </Button>
+          <Button
+            colorScheme={!isDowngrade ? "blue" : "red"}
+            onClick={onConfirm}
+            isLoading={
+              (!isChangingToFree && !data) ||
+              createStatus === "loading" ||
+              cancelStatus === "loading"
+            }
+            isDisabled={
+              !isChangingToFree &&
+              (createStatus === "loading" || cancelStatus === "loading" || !data)
+            }
+          >
+            <span>
+              {!isDowngrade && "Confirm Payment"}
+              {isDowngrade && "Confirm Downgrade"}
+            </span>
+          </Button>
         </ModalFooter>
       </ModalContent>
     </Modal>

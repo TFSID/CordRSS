@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { DynamicModule, Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { FeedFeature } from "../feeds/entities/feed.entity";
 import { PaddleModule } from "../paddle/paddle.module";
@@ -18,4 +18,11 @@ import { UsersService } from "./users.service";
     PaddleModule,
   ],
 })
-export class UsersModule {}
+export class UsersModule {
+  static forRoot(): DynamicModule {
+    return {
+      module: UsersModule,
+      imports: [],
+    };
+  }
+}

@@ -1,6 +1,5 @@
 import { ArticleDeliveryErrorCode } from "../constants";
 import { ArticleDeliveryContentType } from "./article-delivery-content-type.type";
-import { Article } from "./article.type";
 
 export enum ArticleDeliveryStatus {
   // The article is being delivered
@@ -22,7 +21,6 @@ interface BaseArticleDeliveryState {
   id: string;
   mediumId: string;
   articleIdHash: string;
-  article: Article | null;
 }
 
 interface ArticleDeliveryPendingDeliveryState extends BaseArticleDeliveryState {
@@ -41,7 +39,6 @@ interface ArticleDeliveryRateLimitState extends BaseArticleDeliveryState {
   id: string;
   mediumId: string;
   status: ArticleDeliveryStatus.RateLimited;
-  parent?: string;
 }
 
 interface ArticleDeliveryMediumRateLimitedState
@@ -49,19 +46,16 @@ interface ArticleDeliveryMediumRateLimitedState
   id: string;
   mediumId: string;
   status: ArticleDeliveryStatus.MediumRateLimitedByUser;
-  parent?: string;
 }
 
 interface ArticleDeliveryRejectedState extends BaseArticleDeliveryState {
   status: ArticleDeliveryStatus.Rejected;
-  contentType?: ArticleDeliveryContentType;
   errorCode: ArticleDeliveryErrorCode;
   /**
    * User-facing detail.
    */
   externalDetail: string;
   internalMessage: string;
-  parent?: string;
 }
 
 interface ArticleDeliveryFailureState extends BaseArticleDeliveryState {
@@ -74,13 +68,11 @@ interface ArticleDeliveryFailureState extends BaseArticleDeliveryState {
    * Used for internal troubleshooting.
    */
   internalMessage: string;
-  parent?: string;
 }
 
 interface ArticleDeliveryFilteredOutState extends BaseArticleDeliveryState {
   status: ArticleDeliveryStatus.FilteredOut;
   externalDetail: string | null;
-  parent?: string;
 }
 
 export type ArticleDeliveryState =

@@ -17,7 +17,6 @@ import {
   FeedConnectionNotFoundException,
   MissingDiscordChannelException,
 } from "../exceptions";
-import { DiscordChannelMissingViewPermissionsException } from "../exceptions/discord-channel-missing-view-permissions.exception";
 
 const ERROR_CODES: Record<string, { status: HttpStatus; code: ApiErrorCode }> =
   {
@@ -56,10 +55,6 @@ const ERROR_CODES: Record<string, { status: HttpStatus; code: ApiErrorCode }> =
     [WebhookMissingPermissionsException.name]: {
       status: HttpStatus.FORBIDDEN,
       code: ApiErrorCode.WEBHOOKS_MANAGE_MISSING_PERMISSIONS,
-    },
-    [DiscordChannelMissingViewPermissionsException.name]: {
-      status: HttpStatus.BAD_REQUEST,
-      code: ApiErrorCode.FEED_MISSING_VIEW_CHANNEL_PERMISSION,
     },
   };
 

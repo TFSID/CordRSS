@@ -34,11 +34,10 @@ const sampleFilters = {
 
 const mockUserFeeds: UserFeed[] = [
   {
-    id: "1f",
+    id: "1",
     title: "New York Times",
     url: "https://www.feed1.com",
     createdAt: new Date().toISOString(),
-    inputUrl: "https://www.google.com",
     updatedAt: new Date().toISOString(),
     externalProperties: [
       {
@@ -239,7 +238,7 @@ const mockUserFeeds: UserFeed[] = [
         },
         filters: sampleFilters,
         id: "1",
-        disabledCode: FeedConnectionDisabledCode.NotPaidSubscriber,
+        disabledCode: FeedConnectionDisabledCode.MissingPermissions,
         key: FeedConnectionType.DiscordChannel,
         name: "Discord Channel 1",
       },
@@ -307,12 +306,12 @@ const mockUserFeeds: UserFeed[] = [
       },
     ],
     healthStatus: UserFeedHealthStatus.Ok,
-    disabledCode: UserFeedDisabledCode.FailedRequests,
+    disabledCode: UserFeedDisabledCode.FeedTooLarge,
     refreshRateSeconds: 60,
     userRefreshRateSeconds: 120,
   },
   {
-    id: "2f",
+    id: "2",
     sharedAccessDetails: undefined,
     shareManageOptions: undefined,
     title: "Yahoo News",
@@ -321,7 +320,6 @@ const mockUserFeeds: UserFeed[] = [
     updatedAt: new Date().toISOString(),
     refreshRateOptions: [],
     healthStatus: UserFeedHealthStatus.Failed,
-    passingComparisons: ["title", "description"],
     connections: [],
     disabledCode: UserFeedDisabledCode.Manual,
     refreshRateSeconds: 60,
@@ -331,7 +329,7 @@ const mockUserFeeds: UserFeed[] = [
     },
   },
   {
-    id: "3f",
+    id: "3",
     shareManageOptions: undefined,
     sharedAccessDetails: undefined,
     title: "CNN",
@@ -350,7 +348,7 @@ const mockUserFeeds: UserFeed[] = [
   },
 ];
 
-// for (let i = 0; i < 100; i += 1) {
+// for (let i = 0; i < 100; i++) {
 //   mockUserFeeds.push({
 //     id: `${i + 4}`,
 //     title: `Feed ${i + 4}`,
@@ -365,7 +363,6 @@ const mockUserFeeds: UserFeed[] = [
 //       dateFormat: undefined,
 //       dateTimezone: "UTC",
 //     },
-//     refreshRateOptions: [],
 //   });
 // }
 

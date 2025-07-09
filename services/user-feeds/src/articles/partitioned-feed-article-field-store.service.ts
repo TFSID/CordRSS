@@ -8,32 +8,15 @@ import { Injectable } from "@nestjs/common";
 import dayjs from "dayjs";
 import logger from "../shared/utils/logger";
 import PartitionedFeedArticleFieldInsert from "./types/pending-feed-article-field-insert.types";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { PostgreSqlDriver } from "@mikro-orm/postgresql";
-
-interface AsyncStore {
-  toInsert: PartitionedFeedArticleFieldInsert[];
-}
-
-const asyncLocalStorage = new AsyncLocalStorage<AsyncStore>();
 
 @Injectable()
 export class PartitionedFeedArticleFieldStoreService {
   connection: Connection;
   TABLE_NAME = "feed_article_field_partitioned";
+  toInsert: PartitionedFeedArticleFieldInsert[] = [];
 
-  constructor(private readonly orm: MikroORM<PostgreSqlDriver>) {
+  constructor(private readonly orm: MikroORM) {
     this.connection = this.orm.em.getConnection();
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async startContext<T>(cb: () => Promise<T>) {
-    return asyncLocalStorage.run(
-      {
-        toInsert: [],
-      },
-      cb
-    );
   }
 
   async markForPersistence(inserts: PartitionedFeedArticleFieldInsert[]) {
@@ -41,31 +24,15 @@ export class PartitionedFeedArticleFieldStoreService {
       return;
     }
 
-    const store = asyncLocalStorage.getStore();
-
-    if (!store) {
-      throw new Error(
-        "No context was started for PartitionedFeedArticleFieldStoreService"
-      );
-    }
-
-    store.toInsert.push(...inserts);
+    this.toInsert.push(...inserts);
   }
 
   async flush(em: EntityManager<IDatabaseDriver<Connection>>) {
-    const store = asyncLocalStorage.getStore();
-
-    if (!store) {
-      throw new Error(
-        "No context was started for PartitionedFeedArticleFieldStoreService"
-      );
-    }
-
-    const { toInsert: inserts } = store;
-
-    if (inserts.length === 0) {
+    if (this.toInsert.length === 0) {
       return;
     }
+
+    const inserts = this.toInsert;
 
     const connection = em.getConnection();
 
@@ -92,7 +59,7 @@ export class PartitionedFeedArticleFieldStoreService {
       });
       throw err;
     } finally {
-      store.toInsert = [];
+      this.toInsert = [];
     }
   }
 
@@ -115,46 +82,18 @@ export class PartitionedFeedArticleFieldStoreService {
     }>
   > {
     const oneMonthAgo = dayjs().subtract(1, "month").toISOString();
+    const results = await this.connection.execute(
+      `SELECT field_hashed_value` +
+        ` FROM ${this.TABLE_NAME}` +
+        ` WHERE ${
+          olderThanOneMonth ? `created_at <= ?` : `created_at > ?`
+        } AND feed_id = ? AND field_name = 'id' AND field_hashed_value IN (${ids
+          .map(() => "?")
+          .join(", ")})`,
+      [oneMonthAgo, feedId, ...ids]
+    );
 
-    if (ids.length < 15) {
-      return this.connection.execute(
-        `SELECT field_hashed_value` +
-          ` FROM ${this.TABLE_NAME}` +
-          ` WHERE ${
-            olderThanOneMonth ? `created_at <= ?` : `created_at > ?`
-          } AND feed_id = ? AND field_name = 'id' AND field_hashed_value IN (${ids
-            .map(() => "?")
-            .join(", ")})`,
-        [oneMonthAgo, feedId, ...ids]
-      );
-    } else {
-      const result = await this.orm.em.transactional(async (em) => {
-        const temporaryTableName = `current_article_ids_${feedId}`;
-        const sql =
-          `CREATE TEMP TABLE ${temporaryTableName} AS` +
-          ` SELECT * FROM (VALUES ${ids.map(() => "(?)").join(", ")}) AS t(id)`;
-
-        await em.execute(sql, ids);
-
-        const result = await em.execute(
-          `SELECT field_hashed_value` +
-            ` FROM ${this.TABLE_NAME}` +
-            ` INNER JOIN ${temporaryTableName} t ON (field_hashed_value = t.id)` +
-            ` WHERE ${
-              olderThanOneMonth ? `created_at <= ?` : `created_at > ?`
-            } AND feed_id = ? AND field_name = 'id'` +
-            ``,
-          [oneMonthAgo, feedId]
-        );
-
-        await em.execute(`DROP TABLE ${temporaryTableName}`);
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return result as any;
-      });
-
-      return result;
-    }
+    return results;
   }
 
   async someFieldsExist(

@@ -20,7 +20,6 @@ import { CacheModule } from "@nestjs/cache-manager";
     MongooseModule.forFeature([UserFeature]),
     SupportersModule,
     PaddleModule,
-    UserFeedsModule,
   ],
   exports: [SupporterSubscriptionsService],
 })
@@ -28,7 +27,7 @@ export class SupporterSubscriptionsModule {
   static forRoot(): DynamicModule {
     return {
       module: SupporterSubscriptionsModule,
-      imports: [MessageBrokerModule.forRoot()],
+      imports: [MessageBrokerModule.forRoot(), UserFeedsModule.forRoot()],
     };
   }
 }

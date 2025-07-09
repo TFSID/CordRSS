@@ -183,20 +183,6 @@ export class DiscordServersService {
     return this.getProfileSettingsWithDefaults(profile);
   }
 
-  async getGuild(guildId: string): Promise<{ exists: boolean }> {
-    try {
-      await this.discordApiService.getGuild(guildId);
-
-      return { exists: true };
-    } catch (err) {
-      if (err instanceof DiscordAPIError && err.statusCode === 404) {
-        return { exists: false };
-      }
-
-      throw err;
-    }
-  }
-
   async updateServerProfile(
     serverId: string,
     updates: {
@@ -278,7 +264,7 @@ export class DiscordServersService {
   async getTextChannelsOfServer(
     serverId: string,
     options?: {
-      types?: Array<string>;
+      include?: Array<string>;
     }
   ): Promise<DiscordGuildChannelFormatted[]> {
     try {
@@ -288,36 +274,15 @@ export class DiscordServersService {
         );
 
       const relevantChannels = channels.filter((c) => {
-        if (options?.types) {
-          if (
-            options.types.includes("forum") &&
-            c.type === DiscordChannelType.GUILD_FORUM
-          ) {
-            return true;
-          }
-
-          if (
-            options.types.includes("text") &&
-            c.type === DiscordChannelType.GUILD_TEXT
-          ) {
-            return true;
-          }
-
-          if (
-            options.types.includes("announcement") &&
-            c.type === DiscordChannelType.GUILD_ANNOUNCEMENT
-          ) {
-            return true;
-          }
-
-          return false;
-        }
-
         if (
           c.type === DiscordChannelType.GUILD_TEXT ||
           c.type === DiscordChannelType.GUILD_ANNOUNCEMENT
         ) {
           return true;
+        }
+
+        if (c.type === DiscordChannelType.GUILD_FORUM) {
+          return options?.include?.includes("forum");
         }
       });
 

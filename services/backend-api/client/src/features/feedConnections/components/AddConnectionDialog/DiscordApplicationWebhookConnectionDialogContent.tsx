@@ -31,11 +31,10 @@ import {
   DiscordServerSearchSelectv2,
   GetDiscordChannelType,
 } from "../../../discordServers";
+import { notifySuccess } from "../../../../utils/notifySuccess";
 import { SubscriberBlockText } from "@/components/SubscriberBlockText";
 import { BlockableFeature, SupporterTier } from "../../../../constants";
-import { InlineErrorAlert, InlineErrorIncompleteFormAlert } from "../../../../components";
-import { usePageAlertContext } from "../../../../contexts/PageAlertContext";
-import { useIsFeatureAllowed } from "../../../../hooks";
+import { InlineErrorAlert } from "../../../../components";
 
 const formSchema = object({
   name: string().required("Name is required").max(250, "Name must be less than 250 characters"),
@@ -67,15 +66,13 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
     reset,
     watch,
     setValue,
-    formState: { errors, isSubmitting, isValid, isSubmitted },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<FormData>({
     resolver: yupResolver(formSchema),
     mode: "all",
   });
   const [serverId, channelId, threadId] = watch(["serverId", "channelId", "threadId"]);
   const { mutateAsync, error } = useCreateDiscordChannelConnection();
-  const { createSuccessAlert } = usePageAlertContext();
-  const { allowed } = useIsFeatureAllowed({ feature: BlockableFeature.DiscordWebhooks });
   const initialFocusRef = useRef<any>(null);
 
   const onSubmit = async ({ threadId: inputThreadId, name, webhook }: FormData) => {
@@ -96,10 +93,9 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
           },
         },
       });
-      createSuccessAlert({
-        title: "Successfully added connection",
-        description: "New articles will be delivered automatically when found.",
-      });
+      notifySuccess(
+        "Succesfully added connection. New articles will be automatically delivered when found."
+      );
       onClose();
     } catch (err) {}
   };
@@ -107,8 +103,6 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
   useEffect(() => {
     reset();
   }, [isOpen]);
-
-  const errorCount = Object.keys(errors).length;
 
   return (
     <Modal
@@ -132,10 +126,10 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
               supporterTier={SupporterTier.Any}
               onClick={onClose}
             />
-            <form id="addconnection" onSubmit={handleSubmit(onSubmit)} hidden={!allowed}>
+            <form id="addconnection" onSubmit={handleSubmit(onSubmit)}>
               <Stack spacing={4}>
                 <FormControl isInvalid={!!errors.serverId} isRequired>
-                  <FormLabel id="server-select-label" htmlFor="server-select">
+                  <FormLabel>
                     {t(
                       "features.feed.components.addDiscordWebhookConnectionDialog.formServerLabel"
                     )}
@@ -150,10 +144,6 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
                         value={field.value}
                         inputRef={initialFocusRef}
                         isDisabled={isSubmitting}
-                        alertOnArticleEligibility
-                        isInvalid={!!errors.serverId}
-                        inputId="server-select"
-                        ariaLabelledBy="server-select-label"
                       />
                     )}
                   />
@@ -162,18 +152,14 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
                     If you don&apos;t have this permission, you may ask someone who does to add the
                     feed and share it with you.
                   </FormHelperText>
-                  <FormErrorMessage>{errors.serverId?.message}</FormErrorMessage>
                 </FormControl>
                 <FormControl isInvalid={!!errors.channelId} isRequired>
-                  <FormLabel id="channel-select-label" htmlFor="channel-select">
-                    Channel
-                  </FormLabel>
+                  <FormLabel>Channel</FormLabel>
                   <Controller
                     name="channelId"
                     control={control}
                     render={({ field }) => (
                       <DiscordChannelDropdown
-                        isInvalid={!!errors.channelId}
                         value={field.value || ""}
                         onChange={(value, name) => {
                           field.onChange(value);
@@ -191,16 +177,10 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
                             });
                           }
                         }}
-                        types={[
-                          GetDiscordChannelType.Text,
-                          GetDiscordChannelType.Forum,
-                          GetDiscordChannelType.Announcement,
-                        ]}
+                        include={[GetDiscordChannelType.Forum]}
                         onBlur={field.onBlur}
                         isDisabled={isSubmitting}
                         serverId={serverId}
-                        inputId="channel-select"
-                        ariaLabelledBy="channel-select-label"
                       />
                     )}
                   />
@@ -209,18 +189,13 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
                   )}
                 </FormControl>
                 <FormControl isInvalid={!!errors.threadId?.message}>
-                  <FormLabel id="forum-thread-label" htmlFor="forum-thread-select">
-                    Forum Thread
-                  </FormLabel>
+                  <FormLabel>Forum Thread</FormLabel>
                   <Controller
                     name="threadId"
                     control={control}
                     render={({ field }) => (
                       <DiscordActiveThreadDropdown
                         value={field.value || ""}
-                        ariaLabelledBy="forum-thread-label"
-                        isInvalid={!!errors.threadId}
-                        inputId="forum-thread-select"
                         onChange={(value, name) => {
                           field.onChange(value);
 
@@ -340,33 +315,23 @@ export const DiscordApplicationWebhookConnectionDialogContent: React.FC<Props> =
                 description={error.message}
               />
             )}
-            {isSubmitted && errorCount > 0 && (
-              <InlineErrorIncompleteFormAlert fieldCount={errorCount} />
-            )}
           </Stack>
         </ModalBody>
         <ModalFooter>
-          {allowed && (
-            <HStack>
-              <Button variant="ghost" mr={3} onClick={onClose} isDisabled={isSubmitting}>
-                <span>{t("common.buttons.cancel")}</span>
-              </Button>
-              <Button
-                colorScheme="blue"
-                type="submit"
-                form="addconnection"
-                isLoading={isSubmitting}
-                aria-disabled={isSubmitting || !isValid}
-              >
-                <span>{t("common.buttons.save")}</span>
-              </Button>
-            </HStack>
-          )}
-          {!allowed && (
-            <Button onClick={onClose}>
-              <span>Close</span>
+          <HStack>
+            <Button variant="ghost" mr={3} onClick={onClose} isDisabled={isSubmitting}>
+              <span>{t("common.buttons.cancel")}</span>
             </Button>
-          )}
+            <Button
+              colorScheme="blue"
+              type="submit"
+              form="addconnection"
+              isLoading={isSubmitting}
+              isDisabled={isSubmitting || !isValid}
+            >
+              <span>{t("common.buttons.save")}</span>
+            </Button>
+          </HStack>
         </ModalFooter>
       </ModalContent>
     </Modal>

@@ -1,16 +1,12 @@
-import { IsNotEmpty, IsOptional, IsString } from "class-validator";
+import { IsNotEmpty, IsString } from "class-validator";
 
 export class CreateUserFeedInputDto {
   @IsString()
-  @IsOptional()
-  title?: string;
+  @IsNotEmpty()
+  title: string;
 
   @IsString()
   @IsNotEmpty()
   @IsString()
   url: string;
-
-  @IsString()
-  @IsOptional()
-  sourceFeedId?: string;
 }

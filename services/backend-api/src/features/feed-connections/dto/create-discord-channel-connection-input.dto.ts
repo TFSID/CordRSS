@@ -1,6 +1,5 @@
 import { Type } from "class-transformer";
 import {
-  IsIn,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -64,9 +63,4 @@ export class CreateDiscordChnnnelConnectionInputDto {
   @ValidateNested()
   @Type(() => ApplicationWebhook)
   applicationWebhook?: ApplicationWebhook;
-
-  @IsString()
-  @IsOptional()
-  @IsIn(["new-thread"])
-  threadCreationMethod?: "new-thread";
 }

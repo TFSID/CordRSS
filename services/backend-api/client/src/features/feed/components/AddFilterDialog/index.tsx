@@ -64,7 +64,7 @@ export const AddFilterDialog: React.FC<Props> = ({ onSubmit }) => {
   return (
     <>
       <Button colorScheme="blue" isDisabled={saving} isLoading={saving} onClick={onOpen}>
-        <span>{t("components.addFilterDialog.addButton")}</span>
+        {t("components.addFilterDialog.addButton")}
       </Button>
       <Modal isOpen={isOpen} onClose={onClose}>
         <ModalOverlay />

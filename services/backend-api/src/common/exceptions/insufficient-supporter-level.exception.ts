@@ -1,3 +1,1 @@
-import { StandardException } from "./standard-exception.exception";
-
-export class InsufficientSupporterLevelException extends StandardException {}
+export class InsufficientSupporterLevelException extends Error {}

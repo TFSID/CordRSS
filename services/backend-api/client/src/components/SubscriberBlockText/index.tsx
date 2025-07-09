@@ -1,4 +1,4 @@
-import { Alert, AlertDescription, AlertIcon, Box, Button, Stack, Text } from "@chakra-ui/react";
+import { Alert, AlertDescription, Box, Button, Stack, Text } from "@chakra-ui/react";
 import { useContext } from "react";
 import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { BlockableFeature, ProductKey, SupporterTier } from "../../constants";
@@ -93,8 +93,7 @@ export const SubscriberBlockText = ({ alternateText, onClick, feature, supporter
 
   return (
     <Stack>
-      <Alert rounded="md" status="warning" role={undefined}>
-        <AlertIcon />
+      <Alert rounded="md" colorScheme="purple">
         <AlertDescription>
           <Box>
             <Text>
@@ -103,7 +102,7 @@ export const SubscriberBlockText = ({ alternateText, onClick, feature, supporter
               supporting MonitoRSS's free services and open-source development!`}
             </Text>
             {userMeData?.result.enableBilling && (
-              <Button mt={4} onClick={onClickBecomeSupporter}>
+              <Button mt={4} onClick={onClickBecomeSupporter} colorScheme="purple">
                 {buttonText}
               </Button>
             )}
@@ -111,6 +110,7 @@ export const SubscriberBlockText = ({ alternateText, onClick, feature, supporter
               <Button
                 as="a"
                 mt={4}
+                colorScheme="purple"
                 href="https://www.patreon.com/monitorss"
                 target="_blank"
                 rel="noreferrer noopener"

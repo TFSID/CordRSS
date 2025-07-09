@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-import { Module } from "@nestjs/common";
+import { DynamicModule, Module } from "@nestjs/common";
 import { DiscordAuthModule } from "../discord-auth/discord-auth.module";
 import { FeedsModule } from "../feeds/feeds.module";
 import { FeedConnectionsDiscordChannelsService } from "./feed-connections-discord-channels.service";
@@ -26,8 +26,14 @@ import { UsersModule } from "../users/users.module";
     DiscordApiModule,
     MongooseModule.forFeature([UserFeedFeature, UserFeature]),
     UserFeedConnectionEventsModule,
-    UsersModule,
+    UsersModule.forRoot(),
   ],
   exports: [FeedConnectionsDiscordChannelsService],
 })
-export class FeedConnectionsDiscordChannelsModule {}
+export class FeedConnectionsDiscordChannelsModule {
+  static forRoot(): DynamicModule {
+    return {
+      module: FeedConnectionsDiscordChannelsModule,
+    };
+  }
+}

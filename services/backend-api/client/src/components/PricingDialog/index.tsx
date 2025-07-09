@@ -24,24 +24,24 @@ import {
   ModalCloseButton,
   Badge,
 } from "@chakra-ui/react";
-import { ChangeEvent, useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { captureException } from "@sentry/react";
-import { useNavigate } from "react-router-dom";
 import { InlineErrorAlert } from "../InlineErrorAlert";
 import { useUserMe } from "../../features/discordUser";
 import { FAQ } from "../FAQ";
 import { ChangeSubscriptionDialog } from "../ChangeSubscriptionDialog";
-import { pages, ProductKey } from "../../constants";
+import { ProductKey } from "../../constants";
 import { useSubscriptionProducts } from "../../features/subscriptionProducts";
 import { EXTERNAL_PROPERTIES_MAX_ARTICLES } from "../../constants/externalPropertiesMaxArticles";
+import CheckoutSummary from "./CheckoutSummary";
 import { usePaddleContext } from "../../contexts/PaddleContext";
 import { PricePreview } from "../../types/PricePreview";
-import { notifyInfo } from "../../utils/notifyInfo";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onOpen: () => void;
+  openWithPriceId?: string | null;
 }
 
 enum Feature {
@@ -73,7 +73,7 @@ const tiers: Array<{
       },
       {
         name: Feature.ArticleLimit,
-        description: "1000 articles daily per feed",
+        description: "Limit of 1000 articles daily",
         enabled: true,
       },
       {
@@ -106,7 +106,7 @@ const tiers: Array<{
       },
       {
         name: Feature.ArticleLimit,
-        description: "1000 articles daily per feed",
+        description: "Limit of 1000 articles daily",
         enabled: true,
       },
       {
@@ -143,7 +143,7 @@ const tiers: Array<{
       },
       {
         name: Feature.ArticleLimit,
-        description: "1000 articles daily per feed",
+        description: "Limit of 1000 articles daily",
         enabled: true,
       },
       {
@@ -191,21 +191,24 @@ interface ChangeSubscriptionDetails {
   isDowngrade?: boolean;
 }
 
-export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
-  const { getPricePreview, resetCheckoutData } = usePaddleContext();
+export const PricingDialog = ({ isOpen, onClose, onOpen, openWithPriceId }: Props) => {
+  const { openCheckout, updateCheckout, getPricePreview, checkoutLoadedData, resetCheckoutData } =
+    usePaddleContext();
   const [pricePreviewErrored, setPricePreviewErrored] = useState(false);
   const [isLoadingPricePreview, setIsLoadingPricePreview] = useState(true);
   const [products, setProducts] = useState<Array<PricePreview>>();
   const { status: userStatus, error: userError, data: userData } = useUserMe();
+  const [checkingOutPriceId, setCheckingOutPriceId] = useState<string>();
   const [interval, setInterval] = useState<"month" | "year">(initialInterval);
   const { data: subProducts, error: subProductsError } = useSubscriptionProducts();
   const [changeSubscriptionDetails, setChangeSubscriptionDetails] =
     useState<ChangeSubscriptionDetails>();
-  const navigate = useNavigate();
   const userBillingInterval = userData?.result.subscription.billingInterval;
   const billingPeriodEndsAt = userData?.result.subscription.billingPeriod?.end;
+  const initialFocusRef = useRef<HTMLInputElement>(null);
 
   const onClosePricingModal = () => {
+    setCheckingOutPriceId(undefined);
     resetCheckoutData();
     onClose();
   };
@@ -225,24 +228,51 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
       return;
     }
 
+    onClose();
+
     if (userData.result.subscription.product.key === ProductKey.Free) {
-      navigate(pages.checkout(priceId));
-      onClose();
+      setCheckingOutPriceId(priceId);
+      openCheckout({
+        priceId,
+      });
     } else {
       setChangeSubscriptionDetails({
         priceId,
         productId,
         isDowngrade,
       });
-      onClose();
     }
   };
+
+  useEffect(() => {
+    if (
+      openWithPriceId &&
+      userData &&
+      userData.result.subscription.product.key === ProductKey.Free
+    ) {
+      openCheckout({
+        priceId: openWithPriceId,
+      });
+    }
+  }, [openWithPriceId, !!userData, openCheckout]);
+
+  useEffect(() => {
+    if (!isLoadingPricePreview) {
+      initialFocusRef.current?.focus();
+    }
+  }, [isLoadingPricePreview, initialFocusRef.current]);
 
   useEffect(() => {
     if (userBillingInterval) {
       setInterval(userBillingInterval);
     }
   }, [userBillingInterval]);
+
+  useEffect(() => {
+    if (!checkoutLoadedData) {
+      setCheckingOutPriceId(undefined);
+    }
+  }, [!!checkoutLoadedData]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -265,11 +295,7 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
         setProducts(pricePreview);
       } catch (err) {
         setPricePreviewErrored(true);
-        captureException(new Error(`Price preview failed to load`), {
-          extra: {
-            error: err,
-          },
-        });
+        captureException(err);
       } finally {
         setIsLoadingPricePreview(false);
       }
@@ -294,6 +320,37 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
 
   return (
     <Box>
+      <Box display={checkingOutPriceId ? "block" : "none"}>
+        <CheckoutSummary
+          onChangeInterval={(newInterval) => {
+            const product = subProducts?.data.products.find((p) =>
+              p.prices.find((pr) => pr.id === checkingOutPriceId)
+            );
+
+            if (!product) {
+              return;
+            }
+
+            const price = product.prices.find((pr) => pr.interval === newInterval);
+
+            if (!price) {
+              return;
+            }
+
+            updateCheckout({
+              priceId: price.id,
+            });
+          }}
+          checkoutData={checkoutLoadedData}
+          onClose={() => {
+            setCheckingOutPriceId(undefined);
+          }}
+          onGoBack={() => {
+            setCheckingOutPriceId(undefined);
+            onOpen();
+          }}
+        />
+      </Box>
       <ChangeSubscriptionDialog
         products={products}
         isDowngrade={changeSubscriptionDetails?.isDowngrade}
@@ -318,21 +375,20 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
         isOpen={isOpen}
         isCentered
         size="6xl"
+        initialFocusRef={initialFocusRef}
         motionPreset="slideInBottom"
         scrollBehavior="inside"
       >
         <ModalOverlay backdropFilter="blur(3px)" />
         <ModalContent bg="none" shadow="none" maxHeight="100vh">
           <ModalCloseButton />
-          <ModalBody bg="transparent" shadow="none" tabIndex={-1}>
+          <ModalBody bg="transparent" shadow="none">
             <Box mt={12}>
               <Stack>
                 <Flex alignItems="center" justifyContent="center">
                   <Stack width="100%" alignItems="center" spacing={12} justifyContent="center">
                     <Stack justifyContent="center" textAlign="center">
-                      <Heading as="h1" tabIndex={-1}>
-                        Pricing
-                      </Heading>
+                      <Heading>Pricing</Heading>
                       <Text color="whiteAlpha.800" fontSize="lg" fontWeight="light">
                         MonitoRSS is able to stay open-source and free thanks to its supporters.
                         <br />
@@ -346,8 +402,8 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                     {failedToLoadPrices && (
                       <Stack mb={4}>
                         <InlineErrorAlert
-                          title="Something went wrong while loading prices"
-                          description="This issue has been automatically sent for diagnostics. Please try again later, refreshing the page, or contacting us at support@monitorss.xyz"
+                          title="Sorry, something went wrong while loading prices"
+                          description="This issue has been automatically sent for diagnostics. Please try again later, or contact us at support@monitorss.xyz"
                         />
                       </Stack>
                     )}
@@ -362,8 +418,8 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                               size="lg"
                               colorScheme="green"
                               onChange={onChangeInterval}
+                              ref={initialFocusRef}
                               isChecked={interval === "year"}
-                              aria-label="Switch to yearly pricing"
                             />
                             <Text fontSize="lg" fontWeight="semibold">
                               Yearly
@@ -386,7 +442,6 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                               "325px 325px 325px",
                             ]}
                             spacing={4}
-                            role="list"
                           >
                             {tiers.map(
                               (
@@ -402,7 +457,7 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                                 const shorterProductPrice =
                                   associatedPrice?.formattedPrice.endsWith(".00") ? (
                                     <Text fontSize={priceTextSize} fontWeight="bold">
-                                      {associatedPrice?.formattedPrice.slice(0, -3) || 0}
+                                      {associatedPrice?.formattedPrice.slice(0, -3)}
                                     </Text>
                                   ) : (
                                     associatedPrice?.formattedPrice
@@ -425,19 +480,22 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                                     userSubscription.billingInterval === "year");
 
                                 return (
-                                  <Card
-                                    size="lg"
-                                    shadow="lg"
-                                    key={associatedProduct?.name}
-                                    role="listitem"
-                                  >
+                                  <Card size="lg" shadow="lg" key={associatedProduct?.name}>
                                     <CardHeader pb={0}>
                                       <Stack>
                                         <HStack justifyContent="flex-start">
                                           <Heading size="md" fontWeight="semibold">
-                                            {associatedProduct?.name || ""}
+                                            {associatedProduct?.name}
                                           </Heading>
+                                          {/* {highlighted && (
+                                            <Tag size="sm" colorScheme="blue" fontWeight="bold">
+                                              Most Popular
+                                            </Tag>
+                                          )} */}
                                         </HStack>
+                                        {/* <Text color="whiteAlpha.600" fontSize="lg">
+                                          {description}
+                                        </Text> */}
                                       </Stack>
                                     </CardHeader>
                                     <CardBody pt={1}>
@@ -455,20 +513,16 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                                               (shorterProductPrice || "N/A")}
                                           </Text>
                                           <Text fontSize="lg" color="whiteAlpha.600">
-                                            {interval === "month" ? "per month" : "per year"}
+                                            {interval === "month" && "per month"}
+                                            {interval === "year" && "per year"}
                                           </Text>
                                         </Box>
-                                        <Stack as="ul" listStyleType="none">
+                                        <Stack>
                                           {features.map((f) => {
                                             return (
-                                              <HStack key={f.name} as="li">
+                                              <HStack key={f.name}>
                                                 {f.enabled ? (
-                                                  <Flex
-                                                    bg="blue.500"
-                                                    rounded="full"
-                                                    p={1}
-                                                    aria-disabled
-                                                  >
+                                                  <Flex bg="blue.500" rounded="full" p={1}>
                                                     <CheckIcon fontSize="md" width={3} height={3} />
                                                   </Flex>
                                                 ) : (
@@ -487,21 +541,15 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                                     <CardFooter justifyContent="center">
                                       <Stack width="100%" spacing={0}>
                                         <Button
-                                          aria-disabled={isOnThisTier}
+                                          isDisabled={isOnThisTier}
                                           width="100%"
-                                          onClick={() => {
-                                            if (isOnThisTier) {
-                                              notifyInfo("You are already on this plan");
-
-                                              return;
-                                            }
-
+                                          onClick={() =>
                                             onClickPrice(
                                               associatedPrice?.id,
                                               productId,
                                               isBelowUserTier
-                                            );
-                                          }}
+                                            )
+                                          }
                                           variant={
                                             isOnThisTier
                                               ? "outline"
@@ -517,13 +565,9 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                                               : undefined
                                           }
                                         >
-                                          {isOnThisTier && <span>Current Plan</span>}
-                                          {isBelowUserTier && (
-                                            <span>Downgrade to {associatedProduct?.name}</span>
-                                          )}
-                                          {isAboveUserTier && (
-                                            <span>Upgrade to {associatedProduct?.name}</span>
-                                          )}
+                                          {isOnThisTier && "Current Plan"}
+                                          {isBelowUserTier && "Downgrade"}
+                                          {isAboveUserTier && "Upgrade"}
                                         </Button>
                                       </Stack>
                                     </CardFooter>
@@ -552,7 +596,7 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                     </Box>
                     <Box textAlign="center" pb={3} fontSize="lg">
                       <Text>
-                        Need a higher tier?{" "}
+                        Don&apos;t see what you&apos;re looking for?{" "}
                         <Link
                           color="blue.300"
                           href="mailto:support@monitorss.xyz?subject=Custom%20Plan%20Inquiry"
@@ -560,7 +604,7 @@ export const PricingDialog = ({ isOpen, onClose, onOpen }: Props) => {
                           Let&apos;s chat!
                         </Link>
                       </Text>
-                    </Box>
+                    </Box>                    
                     <Text textAlign="center" color="whiteAlpha.600">
                       * External properties are currently limited to feeds with fewer than{" "}
                       {EXTERNAL_PROPERTIES_MAX_ARTICLES} articles <br /> <br />

@@ -32,16 +32,3 @@ export const InlineErrorAlert = ({
     </Alert>
   );
 };
-
-interface IncompleteFormProps {
-  fieldCount: number;
-}
-
-export const InlineErrorIncompleteFormAlert = ({ fieldCount }: IncompleteFormProps) => {
-  return (
-    <InlineErrorAlert
-      title="Failed to save changes"
-      description={`${fieldCount} fields have invalid values`}
-    />
-  );
-};

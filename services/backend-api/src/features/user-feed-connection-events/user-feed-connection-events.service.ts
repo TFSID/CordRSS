@@ -3,9 +3,10 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Types } from "mongoose";
 import logger from "../../utils/logger";
 import { UserFeed, UserFeedModel } from "../user-feeds/entities";
+import { UserFeedShareInviteConnection } from "../user-feeds/entities/user-feed-share-manage-options.entity";
 
 interface CreatedEvent {
-  feedId: string;
+  feed: UserFeed;
   connectionId: Types.ObjectId;
   creator: {
     discordUserId: string;
@@ -23,31 +24,48 @@ export class UserFeedConnectionEventsService {
     @InjectModel(UserFeed.name) private readonly userFeedModel: UserFeedModel
   ) {}
 
-  async handleCreatedEvents(events: Array<CreatedEvent>) {
+  async handleCreatedEvent({ feed, connectionId, creator }: CreatedEvent) {
     try {
-      await this.userFeedModel.bulkWrite(
-        // @ts-ignore
-        events.map((e) => ({
-          updateOne: {
-            filter: {
-              _id: new Types.ObjectId(e.feedId),
-              "shareManageOptions.invites.discordUserId":
-                e.creator.discordUserId,
-            },
-            update: {
-              $push: {
-                "shareManageOptions.invites.$.connections": {
-                  connectionId: e.connectionId,
-                },
+      const connecionToPush: UserFeedShareInviteConnection = {
+        connectionId,
+      };
+
+      const matchingInvite = feed.shareManageOptions?.invites.find(
+        (invite) => invite.discordUserId === creator.discordUserId
+      );
+
+      if (matchingInvite && feed.shareManageOptions?.invites) {
+        feed.shareManageOptions.invites = feed.shareManageOptions.invites.map(
+          (invite) => {
+            if (invite.discordUserId === creator.discordUserId) {
+              invite.connections?.push(connecionToPush);
+            }
+
+            return invite;
+          }
+        );
+
+        await this.userFeedModel.updateOne(
+          {
+            _id: feed._id,
+            "shareManageOptions.invites": {
+              $elemMatch: {
+                discordUserId: creator.discordUserId,
               },
             },
           },
-        }))
-      );
+          {
+            $set: {
+              shareManageOptions: feed.shareManageOptions,
+            },
+          }
+        );
+      }
     } catch (err) {
-      logger.error(`Failed to handle connection created event`, {
-        stack: (err as Error).stack,
-      });
+      logger.error(
+        `Failed to handle connection created event for feed ${feed._id} and discord user ${creator.discordUserId}`,
+        { stack: (err as Error).stack }
+      );
     }
   }
 

@@ -1,4 +1,4 @@
-import { array, InferType, object, string } from "yup";
+import { InferType, object, string } from "yup";
 import fetchRest from "../../../utils/fetchRest";
 
 export interface CreateDiscordChannelConnectionCloneInput {
@@ -6,15 +6,12 @@ export interface CreateDiscordChannelConnectionCloneInput {
   connectionId: string;
   details: {
     name: string;
-    targetFeedIds?: string[];
-    targetFeedSelectionType?: "all" | "selected";
-    targetFeedSearch?: string;
   };
 }
 
 const CreateDiscordChannelConnectionCloneOutputSchema = object({
   result: object({
-    ids: array(string().required()).required(),
+    id: string().required(),
   }).required(),
 }).required();
 

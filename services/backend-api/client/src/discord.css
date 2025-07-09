@@ -501,19 +501,19 @@
   margin-right: 20px
 }
 
-.message-group discord-header {
+.message-group h2 {
   margin: 0;
   padding: 0
 }
 
-.message-group discord-header strong {
+.message-group h2 strong {
   color: #2e3136;
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0
 }
 
-.message-group discord-header .timestamp {
+.message-group h2 .timestamp {
   color: #99aab5;
   font-size: 12px;
   letter-spacing: 0;
@@ -650,11 +650,11 @@
   word-break: break-all
 }
 
-.theme-dark .message-group discord-header strong {
+.theme-dark .message-group h2 strong {
   color: #fff
 }
 
-.theme-dark .message-group discord-header span {
+.theme-dark .message-group h2 span {
   color: hsla(0, 0%, 100%, .2)
 }
 

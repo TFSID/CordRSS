@@ -65,7 +65,6 @@ interface SupportPatronAggregateResult {
   slowRate?: boolean;
   userFeedLimitOverrides?: Array<UserFeedLimitOverride>;
   patrons: Array<{
-    _id: string;
     status: Patron["status"];
     pledge: number;
     pledgeLifetime: number;
@@ -304,17 +303,17 @@ export class SupportersService {
   }
 
   async getSupporterSubscription({
-    billingEmail,
+    email,
     discordUserId,
   }:
-    | { billingEmail: string; discordUserId?: string }
-    | { billingEmail?: string; discordUserId: string }) {
+    | { email: string; discordUserId?: string }
+    | { discordUserId: string; email?: string }) {
     let supporter: Supporter | null = null;
 
-    if (billingEmail) {
+    if (email) {
       supporter = await this.supporterModel
         .findOne({
-          "paddleCustomer.email": billingEmail,
+          "paddleCustomer.email": email,
         })
         .lean();
     } else {
@@ -473,8 +472,6 @@ export class SupportersService {
       isSupporter: boolean;
       maxDailyArticles: number;
       maxUserFeeds: number;
-      maxPatreonPledge: number;
-      source?: SupporterSource;
     }>
   > {
     if (!this.enableSupporters) {
@@ -507,8 +504,6 @@ export class SupportersService {
       maxDailyArticles: this.maxDailyArticlesDefault,
       maxUserFeeds:
         this.defaultMaxUserFeeds + (override.additionalUserFeeds || 0),
-      maxPatreonPledge: 0,
-      source: undefined,
     }));
 
     return benefits
@@ -520,8 +515,6 @@ export class SupportersService {
           ? this.maxDailyArticlesSupporter
           : this.maxDailyArticlesDefault,
         maxUserFeeds: b.maxUserFeeds,
-        maxPatreonPledge: b.maxPatreonPledge || 0,
-        source: b.source,
       }))
       .concat(nonSupporterBenefits);
   }

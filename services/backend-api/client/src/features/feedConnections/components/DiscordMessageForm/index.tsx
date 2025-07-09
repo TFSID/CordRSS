@@ -17,11 +17,11 @@ import {
   Text,
 } from "@chakra-ui/react";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { Suspense, useContext, useState } from "react";
+import { lazy, Suspense, useContext, useState } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { FiPlay } from "react-icons/fi";
 import { motion } from "framer-motion";
-import { FaDiscord } from "react-icons/fa";
 import {
   DiscordMessageEmbedFormData,
   DiscordMessageFormData,
@@ -35,29 +35,21 @@ import { DiscordMessageMentionForm } from "./DiscordMessageMentionForm";
 import { DiscordMessagePlaceholderLimitsForm } from "./DiscordMessagePlaceholderLimitsForm";
 import { CreateDiscordChannelConnectionPreviewInput } from "../../api";
 import { SendTestArticleContext } from "../../../../contexts";
-import { AnimatedComponent } from "../../../../components";
+import { AnimatedComponent, InlineErrorAlert } from "../../../../components";
 import { DiscordMessageComponentsForm } from "./DiscordMessageComponentsForm";
 import { SuspenseErrorBoundary } from "../../../../components/SuspenseErrorBoundary";
 import {
   UserFeedConnectionProvider,
   useUserFeedConnectionContext,
 } from "../../../../contexts/UserFeedConnectionContext";
-import getChakraColor from "../../../../utils/getChakraColor";
-import { DiscordMessageChannelThreadForm } from "./DiscordMessageChannelThreadForm";
-import { lazyWithRetries } from "../../../../utils/lazyImportWithRetry";
-import {
-  PageAlertContext,
-  PageAlertContextOutlet,
-  PageAlertProvider,
-} from "../../../../contexts/PageAlertContext";
 
-const DiscordMessageEmbedForm = lazyWithRetries(() =>
+const DiscordMessageEmbedForm = lazy(() =>
   import("./DiscordMessageEmbedForm").then(({ DiscordMessageEmbedForm: component }) => ({
     default: component,
   }))
 );
 
-const DiscordChannelConnectionPreview = lazyWithRetries(() =>
+const DiscordChannelConnectionPreview = lazy(() =>
   import("./DiscordChannelConnectionPreview").then(
     ({ DiscordChannelConnectionPreview: component }) => ({
       default: component,
@@ -82,10 +74,13 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
     : 0;
   const { t } = useTranslation();
   const [activeEmbedIndex, setActiveEmbedIndex] = useState(defaultIndex);
-  const { isFetching: isSendingTestArticle, sendTestArticle } = useContext(SendTestArticleContext);
+  const {
+    isFetching: isSendingTestArticle,
+    sendTestArticle,
+    error: sendTestArticleError,
+  } = useContext(SendTestArticleContext);
   const showForumForms =
     connection.details.channel?.type === "forum" || connection.details.webhook?.type === "forum";
-  const showChannelThreadForm = connection.details.channel?.type === "new-thread";
   const formMethods = useForm<DiscordMessageFormData>({
     resolver: yupResolver(discordMessageFormSchema),
     defaultValues: {
@@ -99,6 +94,7 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
       externalProperties: userFeed?.externalProperties,
       ...connection?.details,
     },
+    mode: "all",
   });
   const {
     handleSubmit,
@@ -128,8 +124,6 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
     forumThreadTitle,
     componentRows,
     externalProperties,
-    channelNewThreadTitle,
-    channelNewThreadExcludesPreview,
   ] = useWatch({
     control,
     name: [
@@ -145,8 +139,6 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
       "forumThreadTitle",
       "componentRows",
       "externalProperties",
-      "channelNewThreadTitle",
-      "channelNewThreadExcludesPreview",
     ],
   });
 
@@ -175,8 +167,6 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
       forumThreadTitle,
       componentRows,
       externalProperties,
-      channelNewThreadTitle,
-      channelNewThreadExcludesPreview,
     },
   };
 
@@ -234,6 +224,24 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
     setActiveEmbedIndex(index);
   };
 
+  const onClickSendPreviewToDiscord = async () => {
+    if (!previewInput.data.article) {
+      return;
+    }
+
+    try {
+      await sendTestArticle(
+        {
+          connectionType: connection.key,
+          previewInput: previewInput as CreateDiscordChannelConnectionPreviewInput,
+        },
+        {
+          disableToastErrors: true,
+        }
+      );
+    } catch (err) {}
+  };
+
   const errorsExist = Object.keys(errors).length > 0;
 
   return (
@@ -251,151 +259,84 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
       <FormProvider {...formMethods}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <Stack spacing={24} mb={36}>
-            <Stack as="aside" aria-labelledby="preview-message-format-title">
-              <PageAlertProvider>
-                <PageAlertContext.Consumer>
-                  {({ createErrorAlert, createInfoAlert, createSuccessAlert }) => (
-                    <Stack isolation="isolate">
-                      <HStack justifyContent="space-between" flexWrap="wrap" alignItems="center">
-                        <HStack spacing={4} alignItems="center" flexWrap="wrap">
-                          <Heading as="h3" size="sm" id="preview-message-format-title">
-                            {t("components.discordMessageForm.previewSectionTitle")}
-                          </Heading>
-                          {isDirty && (
-                            <Text fontSize="sm" fontWeight={600}>
-                              <Highlight
-                                query={t(
-                                  "components.discordMessageForm.previewSectionUnsavedWarning"
-                                )}
-                                styles={{
-                                  bg: "orange.200",
-                                  rounded: "full",
-                                  px: "2",
-                                  py: "1",
-                                }}
-                              >
-                                {t("components.discordMessageForm.previewSectionUnsavedWarning")}
-                              </Highlight>
-                            </Text>
-                          )}
-                        </HStack>
-                        <Button
-                          leftIcon={<FaDiscord fontSize={18} color={getChakraColor("gray.700")} />}
-                          onClick={async () => {
-                            if (
-                              isSendingTestArticle ||
-                              !articleIdToPreview ||
-                              !previewInput.data.article
-                            ) {
-                              return;
-                            }
-
-                            try {
-                              const resultInfo = await sendTestArticle(
-                                {
-                                  connectionType: connection.key,
-                                  previewInput:
-                                    previewInput as CreateDiscordChannelConnectionPreviewInput,
-                                },
-                                {
-                                  disableToast: true,
-                                }
-                              );
-
-                              if (resultInfo?.status === "info") {
-                                createInfoAlert({
-                                  title: resultInfo.title,
-                                  description: resultInfo.description,
-                                });
-                              } else if (resultInfo?.status === "success") {
-                                createSuccessAlert({
-                                  title: resultInfo.title,
-                                  description: resultInfo.description,
-                                });
-                              } else if (resultInfo?.status === "error") {
-                                createErrorAlert({
-                                  title: resultInfo.title,
-                                  description: resultInfo.description,
-                                });
-                              }
-                            } catch (err) {}
+            <Stack>
+              <Stack>
+                <HStack justifyContent="space-between" flexWrap="wrap" alignItems="center">
+                  <HStack spacing={4} alignItems="center" flexWrap="wrap">
+                    <Heading as="h2" size="md">
+                      {t("components.discordMessageForm.previewSectionTitle")}
+                    </Heading>
+                    {isDirty && (
+                      <Text fontSize="sm" fontWeight={600}>
+                        <Highlight
+                          query={t("components.discordMessageForm.previewSectionUnsavedWarning")}
+                          styles={{
+                            bg: "orange.200",
+                            rounded: "full",
+                            px: "2",
+                            py: "1",
                           }}
-                          size="sm"
-                          colorScheme="blue"
-                          isLoading={isSendingTestArticle}
-                          aria-disabled={isSendingTestArticle || !articleIdToPreview}
                         >
-                          <span>
-                            {t("components.discordMessageForm.sendPreviewToDiscordButtonText")}
-                          </span>
-                        </Button>
-                      </HStack>
-                      <PageAlertContextOutlet />
-                      {/* {sendTestArticleError && (
-                    <Box mt={3} mb={3}>
-                      <InlineErrorAlert
-                        title="Failed to send preview article to Discord"
-                        description={sendTestArticleError}
-                      />
-                    </Box>
-                  )} */}
-                      <Text>{t("components.discordMessageForm.previewSectionDescription")}</Text>
-                    </Stack>
-                  )}
-                </PageAlertContext.Consumer>
-              </PageAlertProvider>
-              <Box>
-                {connection.key === FeedConnectionType.DiscordChannel && (
-                  <SuspenseErrorBoundary>
-                    <Suspense
-                      fallback={
-                        <Center my={8}>
-                          <Spinner />
-                        </Center>
-                      }
-                    >
-                      <DiscordChannelConnectionPreview
-                        connectionId={connection.id}
-                        data={
-                          previewInput.data as CreateDiscordChannelConnectionPreviewInput["data"]
-                        }
-                        feedId={userFeed.id}
-                        hasErrors={errorsExist}
-                      />
-                    </Suspense>
-                  </SuspenseErrorBoundary>
+                          {t("components.discordMessageForm.previewSectionUnsavedWarning")}
+                        </Highlight>
+                      </Text>
+                    )}
+                  </HStack>
+                  <Button
+                    leftIcon={<FiPlay />}
+                    onClick={onClickSendPreviewToDiscord}
+                    size="sm"
+                    colorScheme="blue"
+                    isLoading={isSendingTestArticle}
+                    isDisabled={isSendingTestArticle || !articleIdToPreview}
+                  >
+                    <span>{t("components.discordMessageForm.sendPreviewToDiscordButtonText")}</span>
+                  </Button>
+                </HStack>
+                <Text>{t("components.discordMessageForm.previewSectionDescription")}</Text>
+                {sendTestArticleError && (
+                  <Box mt={3} mb={3}>
+                    <InlineErrorAlert
+                      title="Failed to send preview article to Discord"
+                      description={sendTestArticleError}
+                    />
+                  </Box>
                 )}
-              </Box>
+              </Stack>
+              {connection.key === FeedConnectionType.DiscordChannel && (
+                <SuspenseErrorBoundary>
+                  <Suspense
+                    fallback={
+                      <Center my={8}>
+                        <Spinner />
+                      </Center>
+                    }
+                  >
+                    <DiscordChannelConnectionPreview
+                      connectionId={connection.id}
+                      data={previewInput.data as CreateDiscordChannelConnectionPreviewInput["data"]}
+                      feedId={userFeed.id}
+                      hasErrors={errorsExist}
+                    />
+                  </Suspense>
+                </SuspenseErrorBoundary>
+              )}
             </Stack>
             {showForumForms && (
               <Stack>
-                <Heading size="sm" as="h3">
-                  {t("components.discordMessageForumThreadForm.title")}
-                </Heading>
+                <Heading size="md">{t("components.discordMessageForumThreadForm.title")}</Heading>
                 <DiscordMessageForumThreadForm />
               </Stack>
             )}
-            {showChannelThreadForm && (
-              <Stack>
-                <Heading size="sm" as="h3">
-                  Channel Thread
-                </Heading>
-                <DiscordMessageChannelThreadForm />
-              </Stack>
-            )}
             <Stack>
-              <Heading size="sm" as="h3">
-                {t("components.discordMessageForm.textSectionTitle")}
-              </Heading>
+              <Heading size="md">{t("components.discordMessageForm.textSectionTitle")}</Heading>
               <DiscordMessageContentForm />
             </Stack>
             <Stack>
-              <Heading size="sm" as="h3">
-                {t("components.discordMessageForm.embedSectionTitle")}
-              </Heading>
+              <Heading size="md">{t("components.discordMessageForm.embedSectionTitle")}</Heading>
               <Text>{t("components.discordMessageForm.embedSectionDescription")}</Text>
               <Tabs variant="solid-rounded" index={activeEmbedIndex} onChange={onEmbedTabChanged}>
-                <HStack overflow="auto" flexWrap="wrap">
+                <HStack overflow="auto">
                   {!!embeds.length && (
                     <TabList>
                       {embeds?.map((embed, index) => (
@@ -409,7 +350,7 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
                       aria-label="Add new embed"
                       leftIcon={<AddIcon fontSize="sm" />}
                     >
-                      Add new embed
+                      Add
                     </Button>
                   )}
                 </HStack>
@@ -426,7 +367,9 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
                                 variant="outline"
                                 onClick={() => onRemoveEmbed(index)}
                               >
-                                Delete embed {index + 1}
+                                {t(
+                                  "features.feedConnections.components.embedForm.deleteButtonText"
+                                )}
                               </Button>
                             </Flex>
                             <DiscordMessageEmbedForm index={index} />
@@ -439,21 +382,15 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
               </Tabs>
             </Stack>
             <Stack>
-              <Heading size="sm" as="h3">
-                Buttons
-              </Heading>
+              <Heading size="md">Buttons</Heading>
               <DiscordMessageComponentsForm connectionId={connection.id} feedId={userFeed.id} />
             </Stack>
             <Stack>
-              <Heading size="sm" as="h3">
-                {t("components.discordMessageMentionForm.title")}
-              </Heading>
+              <Heading size="md">{t("components.discordMessageMentionForm.title")}</Heading>
               <DiscordMessageMentionForm guildId={guildId} />
             </Stack>
             <Stack>
-              <Heading size="sm" as="h3">
-                Placeholder Limits
-              </Heading>
+              <Heading size="md">Placeholder Limits</Heading>
               <DiscordMessagePlaceholderLimitsForm />
             </Stack>
             <AnimatedComponent>
@@ -475,15 +412,15 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
                   animate={{ opacity: 1, bottom: "0px" }}
                   exit={{ opacity: 0, bottom: "-100px" }}
                 >
-                  <HStack justifyContent="space-between" width="100%" flexWrap="wrap" gap={4}>
-                    <Text>You have unsaved changes on this page!</Text>
-                    <HStack flexWrap="wrap">
+                  <HStack justifyContent="space-between" width="100%">
+                    <Text>You have unsaved changes!</Text>
+                    <HStack>
                       <Button
                         onClick={() => reset()}
                         variant="ghost"
                         isDisabled={!isDirty || isSubmitting}
                       >
-                        <span>Discard all changes</span>
+                        <span>{t("features.feed.components.sidebar.resetButton")}</span>
                       </Button>
                       <Button
                         type="submit"
@@ -491,7 +428,7 @@ export const DiscordMessageForm = ({ onClickSave, articleIdToPreview, guildId }:
                         isDisabled={isSubmitting || !isDirty || errorsExist}
                         isLoading={isSubmitting}
                       >
-                        <span>Save all changes</span>
+                        <span>{t("features.feed.components.sidebar.saveButton")}</span>
                       </Button>
                     </HStack>
                   </HStack>
